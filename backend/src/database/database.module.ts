@@ -32,6 +32,7 @@ import { ViewHistory } from '../entities/view-history.entity';
         ],
         synchronize: false, // NEVER use true in production
         logging: configService.get('NODE_ENV') === 'development',
+        ssl: { rejectUnauthorized: false },
         ssl: configService.get('NODE_ENV') === 'production' ? { rejectUnauthorized: false } : false,
       }),
     }),
