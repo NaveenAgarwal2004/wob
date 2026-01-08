@@ -1,16 +1,16 @@
+// backend/src/entities/product.entity.ts
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToOne, OneToMany, Index, JoinColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { Category } from './category.entity';
 import { ProductDetail } from './product-detail.entity';
 import { Review } from './review.entity';
 
 @Entity('products')
-@Index(['sourceId'], { unique: true })
+// REMOVE the class-level @Index(['sourceId'], { unique: true })
 export class Product {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
-  @Index()
+  @Column({ unique: true }) // This automatically creates a unique index
   sourceId: string;
 
   @Column()
@@ -28,15 +28,14 @@ export class Product {
   @Column({ nullable: true })
   imageUrl: string;
 
-  @Column({ unique: true })
-  @Index()
+  @Column({ unique: true }) // This automatically creates a unique index
   sourceUrl: string;
 
   @Column({ nullable: true })
   categoryId: string;
 
   @Column({ type: 'timestamp', nullable: true })
-  @Index()
+  @Index() // Keeping this for performance on date filtering
   lastScrapedAt: Date;
 
   @ManyToOne(() => Category, category => category.products)
