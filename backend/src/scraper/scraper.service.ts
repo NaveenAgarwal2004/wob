@@ -32,8 +32,8 @@ export class ScraperService {
     private scrapeJobRepo: Repository<ScrapeJob>,
     private configService: ConfigService,
   ) {
-    this.DELAY_MS = this.configService.get<number>('SCRAPE_DELAY_MS', 2000);
-    this.MAX_RETRIES = this.configService.get<number>('SCRAPE_MAX_RETRIES', 3);
+    this.DELAY_MS = parseInt(this.configService.get<string>('SCRAPE_DELAY_MS', '2000'));
+    this.MAX_RETRIES = parseInt(this.configService.get<string>('SCRAPE_MAX_RETRIES', '3'));
   }
 
   async scrapeNavigations(): Promise<Navigation[]> {
@@ -159,7 +159,7 @@ export class ScraperService {
     // Check cache unless forced
     if (!force && navigation.lastScrapedAt) {
       const cacheAge = Date.now() - navigation.lastScrapedAt.getTime();
-      const cacheTTL = this.configService.get<number>('CACHE_TTL_SECONDS', 3600) * 1000;
+      const cacheTTL = parseInt(this.configService.get<string>('CACHE_TTL_SECONDS', '3600')) * 1000;
       if (cacheAge < cacheTTL) {
         this.logger.log(`Using cached categories for navigation: ${navigation.title}`);
         return this.categoryRepo.find({ where: { navigationId } });
@@ -284,7 +284,7 @@ export class ScraperService {
     // Check cache
     if (!force && category.lastScrapedAt) {
       const cacheAge = Date.now() - category.lastScrapedAt.getTime();
-      const cacheTTL = this.configService.get<number>('CACHE_TTL_SECONDS', 3600) * 1000;
+      const cacheTTL = parseInt(this.configService.get<string>('CACHE_TTL_SECONDS', '3600')) * 1000;
       if (cacheAge < cacheTTL) {
         this.logger.log(`Using cached products for category: ${category.title}`);
         const [products, total] = await this.productRepo.findAndCount({
@@ -444,7 +444,7 @@ export class ScraperService {
     // Check cache
     if (!force && product.lastScrapedAt) {
       const cacheAge = Date.now() - product.lastScrapedAt.getTime();
-      const cacheTTL = this.configService.get<number>('CACHE_TTL_SECONDS', 3600) * 1000;
+      const cacheTTL = parseInt(this.configService.get<string>('CACHE_TTL_SECONDS', '3600')) * 1000;
       if (cacheAge < cacheTTL && product.detail) {
         this.logger.log(`Using cached detail for product: ${product.title}`);
         return product.detail;

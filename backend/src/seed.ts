@@ -31,58 +31,83 @@ async function seed() {
     const productDetailRepo = AppDataSource.getRepository(ProductDetail);
     const reviewRepo = AppDataSource.getRepository(Review);
 
-    // Create sample navigations
-    const navigation1 = navigationRepo.create({
-      title: 'Books',
-      slug: 'books',
-      sourceUrl: 'https://www.worldofbooks.com/en-gb/books',
-      lastScrapedAt: new Date(),
-    });
-    await navigationRepo.save(navigation1);
-    console.log('✅ Created navigation: Books');
+    // Create sample navigations (using upsert pattern)
+    let navigation1 = await navigationRepo.findOne({ where: { slug: 'books' } });
+    if (!navigation1) {
+      navigation1 = navigationRepo.create({
+        title: 'Books',
+        slug: 'books',
+        sourceUrl: 'https://www.worldofbooks.com/en-gb/books',
+        lastScrapedAt: new Date(),
+      });
+      await navigationRepo.save(navigation1);
+      console.log('✅ Created navigation: Books');
+    } else {
+      console.log('⏭️  Navigation already exists: Books');
+    }
 
-    const navigation2 = navigationRepo.create({
-      title: "Children's Books",
-      slug: 'childrens-books',
-      sourceUrl: 'https://www.worldofbooks.com/en-gb/childrens-books',
-      lastScrapedAt: new Date(),
-    });
-    await navigationRepo.save(navigation2);
-    console.log("✅ Created navigation: Children's Books");
+    let navigation2 = await navigationRepo.findOne({ where: { slug: 'childrens-books' } });
+    if (!navigation2) {
+      navigation2 = navigationRepo.create({
+        title: "Children's Books",
+        slug: 'childrens-books',
+        sourceUrl: 'https://www.worldofbooks.com/en-gb/childrens-books',
+        lastScrapedAt: new Date(),
+      });
+      await navigationRepo.save(navigation2);
+      console.log("✅ Created navigation: Children's Books");
+    } else {
+      console.log("⏭️  Navigation already exists: Children's Books");
+    }
 
-    // Create sample categories
-    const category1 = categoryRepo.create({
-      navigationId: navigation1.id,
-      title: 'Fiction',
-      slug: 'fiction',
-      productCount: 10,
-      sourceUrl: 'https://www.worldofbooks.com/en-gb/books/fiction',
-      lastScrapedAt: new Date(),
-    });
-    await categoryRepo.save(category1);
-    console.log('✅ Created category: Fiction');
+    // Create sample categories (using upsert pattern)
+    let category1 = await categoryRepo.findOne({ where: { slug: 'fiction', navigationId: navigation1.id } });
+    if (!category1) {
+      category1 = categoryRepo.create({
+        navigationId: navigation1.id,
+        title: 'Fiction',
+        slug: 'fiction',
+        productCount: 10,
+        sourceUrl: 'https://www.worldofbooks.com/en-gb/books/fiction',
+        lastScrapedAt: new Date(),
+      });
+      await categoryRepo.save(category1);
+      console.log('✅ Created category: Fiction');
+    } else {
+      console.log('⏭️  Category already exists: Fiction');
+    }
 
-    const category2 = categoryRepo.create({
-      navigationId: navigation1.id,
-      title: 'Non-Fiction',
-      slug: 'non-fiction',
-      productCount: 8,
-      sourceUrl: 'https://www.worldofbooks.com/en-gb/books/non-fiction',
-      lastScrapedAt: new Date(),
-    });
-    await categoryRepo.save(category2);
-    console.log('✅ Created category: Non-Fiction');
+    let category2 = await categoryRepo.findOne({ where: { slug: 'non-fiction', navigationId: navigation1.id } });
+    if (!category2) {
+      category2 = categoryRepo.create({
+        navigationId: navigation1.id,
+        title: 'Non-Fiction',
+        slug: 'non-fiction',
+        productCount: 8,
+        sourceUrl: 'https://www.worldofbooks.com/en-gb/books/non-fiction',
+        lastScrapedAt: new Date(),
+      });
+      await categoryRepo.save(category2);
+      console.log('✅ Created category: Non-Fiction');
+    } else {
+      console.log('⏭️  Category already exists: Non-Fiction');
+    }
 
-    const category3 = categoryRepo.create({
-      navigationId: navigation2.id,
-      title: 'Picture Books',
-      slug: 'picture-books',
-      productCount: 5,
-      sourceUrl: 'https://www.worldofbooks.com/en-gb/childrens-books/picture-books',
-      lastScrapedAt: new Date(),
-    });
-    await categoryRepo.save(category3);
-    console.log('✅ Created category: Picture Books');
+    let category3 = await categoryRepo.findOne({ where: { slug: 'picture-books', navigationId: navigation2.id } });
+    if (!category3) {
+      category3 = categoryRepo.create({
+        navigationId: navigation2.id,
+        title: 'Picture Books',
+        slug: 'picture-books',
+        productCount: 5,
+        sourceUrl: 'https://www.worldofbooks.com/en-gb/childrens-books/picture-books',
+        lastScrapedAt: new Date(),
+      });
+      await categoryRepo.save(category3);
+      console.log('✅ Created category: Picture Books');
+    } else {
+      console.log('⏭️  Category already exists: Picture Books');
+    }
 
     // Create sample products
     const sampleProducts = [
@@ -168,48 +193,55 @@ async function seed() {
     for (const productData of sampleProducts) {
       const { description, ...productFields } = productData;
       
-      const product = productRepo.create({
-        ...productFields,
-        lastScrapedAt: new Date(),
-      });
-      await productRepo.save(product);
-      console.log(`✅ Created product: ${product.title}`);
-
-      // Create product detail
-      const detail = productDetailRepo.create({
-        productId: product.id,
-        description: description,
-        ratingsAvg: 4.0 + Math.random(),
-        reviewsCount: Math.floor(Math.random() * 50) + 10,
-        specs: {
-          Publisher: 'Sample Publisher',
-          'Publication Date': '2020-01-01',
-          Pages: Math.floor(Math.random() * 300) + 200,
-          ISBN: '978-' + Math.floor(Math.random() * 10000000000),
-          Format: 'Paperback',
-          Language: 'English',
-        },
-        recommendations: [],
-      });
-      await productDetailRepo.save(detail);
-
-      // Create sample reviews
-      const reviewTexts = [
-        'Absolutely loved this book! A must-read.',
-        'Great storytelling and engaging characters.',
-        'One of the best books I have ever read.',
-        'Highly recommend to anyone who enjoys this genre.',
-        'A masterpiece of literature.',
-      ];
-
-      for (let i = 0; i < 3; i++) {
-        const review = reviewRepo.create({
-          productId: product.id,
-          author: `Reader ${Math.floor(Math.random() * 1000)}`,
-          rating: Math.floor(Math.random() * 2) + 4, // 4 or 5 stars
-          text: reviewTexts[Math.floor(Math.random() * reviewTexts.length)],
+      // Check if product already exists
+      let product = await productRepo.findOne({ where: { sourceId: productData.sourceId } });
+      
+      if (!product) {
+        product = productRepo.create({
+          ...productFields,
+          lastScrapedAt: new Date(),
         });
-        await reviewRepo.save(review);
+        await productRepo.save(product);
+        console.log(`✅ Created product: ${product.title}`);
+
+        // Create product detail
+        const detail = productDetailRepo.create({
+          productId: product.id,
+          description: description,
+          ratingsAvg: 4.0 + Math.random(),
+          reviewsCount: Math.floor(Math.random() * 50) + 10,
+          specs: {
+            Publisher: 'Sample Publisher',
+            'Publication Date': '2020-01-01',
+            Pages: Math.floor(Math.random() * 300) + 200,
+            ISBN: '978-' + Math.floor(Math.random() * 10000000000),
+            Format: 'Paperback',
+            Language: 'English',
+          },
+          recommendations: [],
+        });
+        await productDetailRepo.save(detail);
+
+        // Create sample reviews
+        const reviewTexts = [
+          'Absolutely loved this book! A must-read.',
+          'Great storytelling and engaging characters.',
+          'One of the best books I have ever read.',
+          'Highly recommend to anyone who enjoys this genre.',
+          'A masterpiece of literature.',
+        ];
+
+        for (let i = 0; i < 3; i++) {
+          const review = reviewRepo.create({
+            productId: product.id,
+            author: `Reader ${Math.floor(Math.random() * 1000)}`,
+            rating: Math.floor(Math.random() * 2) + 4, // 4 or 5 stars
+            text: reviewTexts[Math.floor(Math.random() * reviewTexts.length)],
+          });
+          await reviewRepo.save(review);
+        }
+      } else {
+        console.log(`⏭️  Product already exists: ${product.title}`);
       }
     }
 
