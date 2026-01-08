@@ -27,7 +27,7 @@ const getSessionId = () => {
   return sessionId;
 };
 
-export const useBrowsingHistory = create<BrowsingHistoryStore>()()
+export const useBrowsingHistory = create<BrowsingHistoryStore>()(
   persist(
     (set, get) => ({
       history: [],

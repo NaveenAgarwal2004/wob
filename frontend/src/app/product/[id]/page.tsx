@@ -62,11 +62,11 @@ export default function ProductDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-gray-50" data-testid="product-detail-page">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Breadcrumb */}
         <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-sm" data-testid="breadcrumb">
             <Link href="/" className="text-blue-600 hover:text-blue-700 transition">
               Home
             </Link>
@@ -89,6 +89,7 @@ export default function ProductDetailPage() {
             onClick={handleRefresh}
             disabled={refreshing}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            data-testid="refresh-data-btn"
           >
             <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
             {refreshing ? 'Refreshing...' : 'Refresh Data'}
@@ -96,10 +97,10 @@ export default function ProductDetailPage() {
         </div>
 
         {/* Product Detail */}
-        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+        <div className="bg-white rounded-lg shadow-sm border overflow-hidden" data-testid="product-detail-container">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-8">
             {/* Image */}
-            <div className="aspect-[3/4] relative bg-gray-100 rounded-lg overflow-hidden">
+            <div className="aspect-[3/4] relative bg-gray-100 rounded-lg overflow-hidden" data-testid="product-image-container">
               {product?.imageUrl ? (
                 <Image
                   src={product.imageUrl}
@@ -107,9 +108,10 @@ export default function ProductDetailPage() {
                   fill
                   className="object-cover"
                   sizes="(max-width: 768px) 100vw, 50vw"
+                  data-testid="product-detail-image"
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                <div className="w-full h-full flex items-center justify-center text-gray-400" data-testid="product-detail-no-image">
                   No Image Available
                 </div>
               )}
@@ -117,19 +119,19 @@ export default function ProductDetailPage() {
 
             {/* Details */}
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">{product?.title}</h1>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2" data-testid="product-detail-title">{product?.title}</h1>
               {product?.author && (
-                <p className="text-xl text-gray-600 mb-4">by {product.author}</p>
+                <p className="text-xl text-gray-600 mb-4" data-testid="product-detail-author">by {product.author}</p>
               )}
               {product?.price && (
-                <p className="text-3xl font-bold text-green-600 mb-6">
+                <p className="text-3xl font-bold text-green-600 mb-6" data-testid="product-detail-price">
                   £{product.price.toFixed(2)}
                 </p>
               )}
 
               {/* Rating */}
               {product?.detail?.ratingsAvg && (
-                <div className="flex items-center gap-2 mb-6">
+                <div className="flex items-center gap-2 mb-6" data-testid="product-rating">
                   <div className="flex items-center gap-1">
                     {Array.from({ length: 5 }).map((_, i) => (
                       <Star
@@ -142,14 +144,14 @@ export default function ProductDetailPage() {
                       />
                     ))}
                   </div>
-                  <span className="text-lg font-semibold">{product.detail.ratingsAvg.toFixed(1)}</span>
-                  <span className="text-gray-600">({product.detail.reviewsCount} reviews)</span>
+                  <span className="text-lg font-semibold" data-testid="rating-value">{product.detail.ratingsAvg.toFixed(1)}</span>
+                  <span className="text-gray-600" data-testid="review-count">({product.detail.reviewsCount} reviews)</span>
                 </div>
               )}
 
               {/* Description */}
               {product?.detail?.description && (
-                <div className="mb-6">
+                <div className="mb-6" data-testid="product-description">
                   <h2 className="text-xl font-semibold text-gray-900 mb-2">Description</h2>
                   <p className="text-gray-700 leading-relaxed">{product.detail.description}</p>
                 </div>
@@ -157,11 +159,11 @@ export default function ProductDetailPage() {
 
               {/* Specs */}
               {product?.detail?.specs && Object.keys(product.detail.specs).length > 0 && (
-                <div className="mb-6">
+                <div className="mb-6" data-testid="product-specs">
                   <h2 className="text-xl font-semibold text-gray-900 mb-3">Specifications</h2>
                   <dl className="grid grid-cols-1 gap-2">
                     {Object.entries(product.detail.specs).map(([key, value]) => (
-                      <div key={key} className="flex py-2 border-b">
+                      <div key={key} className="flex py-2 border-b" data-testid={`spec-${key}`}>
                         <dt className="font-medium text-gray-700 w-1/3">{key}:</dt>
                         <dd className="text-gray-600 w-2/3">{value}</dd>
                       </div>
@@ -174,16 +176,16 @@ export default function ProductDetailPage() {
 
           {/* Reviews */}
           {product?.reviews && product.reviews.length > 0 && (
-            <div className="border-t p-8">
+            <div className="border-t p-8" data-testid="product-reviews">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Customer Reviews</h2>
               <div className="space-y-6">
-                {product.reviews.map((review) => (
-                  <div key={review.id} className="border-b pb-6 last:border-0">
+                {product.reviews.map((review, index) => (
+                  <div key={review.id} className="border-b pb-6 last:border-0" data-testid={`review-${index}`}>
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="font-semibold text-gray-900">
+                      <span className="font-semibold text-gray-900" data-testid={`review-author-${index}`}>
                         {review.author || 'Anonymous'}
                       </span>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1" data-testid={`review-rating-${index}`}>
                         {Array.from({ length: 5 }).map((_, i) => (
                           <Star
                             key={i}
@@ -196,7 +198,7 @@ export default function ProductDetailPage() {
                         ))}
                       </div>
                     </div>
-                    {review.text && <p className="text-gray-700">{review.text}</p>}
+                    {review.text && <p className="text-gray-700" data-testid={`review-text-${index}`}>{review.text}</p>}
                   </div>
                 ))}
               </div>

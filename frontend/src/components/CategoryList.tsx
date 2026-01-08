@@ -17,7 +17,7 @@ export default function CategoryList({ navigationId }: CategoryListProps) {
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+      <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center" data-testid="category-error">
         <p className="text-red-600">Failed to load categories. Please try again.</p>
       </div>
     );
@@ -25,7 +25,7 @@ export default function CategoryList({ navigationId }: CategoryListProps) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[200px]">
+      <div className="flex items-center justify-center min-h-[200px]" data-testid="category-loading">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
       </div>
     );
@@ -33,31 +33,35 @@ export default function CategoryList({ navigationId }: CategoryListProps) {
 
   if (!data || data.length === 0) {
     return (
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center" data-testid="category-empty">
         <p className="text-yellow-700">No categories found. Scraping may be in progress...</p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="category-list">
       {data.map((category) => (
         <Link
           key={category.id}
           href={`/products/${category.id}`}
           className="group border-2 border-gray-200 rounded-lg p-6 hover:border-blue-500 hover:shadow-lg transition-all duration-200 bg-white"
+          data-testid={`category-card-${category.id}`}
         >
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition mb-2">
+              <h3 
+                className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition mb-2"
+                data-testid={`category-title-${category.id}`}
+              >
                 {category.title}
               </h3>
-              <div className="flex items-center text-sm text-gray-500">
+              <div className="flex items-center text-sm text-gray-500" data-testid={`category-count-${category.id}`}>
                 <Package className="h-4 w-4 mr-1" />
                 <span>{category.productCount} products</span>
               </div>
               {category.lastScrapedAt && (
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-xs text-gray-400 mt-2" data-testid={`category-updated-${category.id}`}>
                   Updated: {new Date(category.lastScrapedAt).toLocaleDateString()}
                 </p>
               )}

@@ -29,7 +29,7 @@ export default function ProductGrid({ categoryId }: ProductGridProps) {
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+      <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center" data-testid="product-grid-error">
         <p className="text-red-600">Failed to load products. Please try again.</p>
       </div>
     );
@@ -37,7 +37,7 @@ export default function ProductGrid({ categoryId }: ProductGridProps) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex items-center justify-center min-h-[400px]" data-testid="product-grid-loading">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
       </div>
     );
@@ -45,7 +45,7 @@ export default function ProductGrid({ categoryId }: ProductGridProps) {
 
   if (!data || data.products.length === 0) {
     return (
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center" data-testid="product-grid-empty">
         <p className="text-yellow-700">No products found. Scraping may be in progress...</p>
       </div>
     );
@@ -55,12 +55,13 @@ export default function ProductGrid({ categoryId }: ProductGridProps) {
 
   return (
     <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8" data-testid="product-grid">
         {data.products.map((product) => (
           <Link
             key={product.id}
             href={`/product/${product.id}`}
             className="group border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-200 bg-white"
+            data-testid={`product-grid-item-${product.id}`}
           >
             <div className="aspect-[3/4] relative bg-gray-100">
               {product.imageUrl ? (
@@ -70,22 +71,34 @@ export default function ProductGrid({ categoryId }: ProductGridProps) {
                   fill
                   className="object-cover group-hover:scale-105 transition-transform duration-200"
                   sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                  data-testid={`product-grid-image-${product.id}`}
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                <div className="w-full h-full flex items-center justify-center text-gray-400" data-testid={`product-grid-no-image-${product.id}`}>
                   No Image
                 </div>
               )}
             </div>
             <div className="p-4">
-              <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition line-clamp-2 mb-1">
+              <h3 
+                className="font-semibold text-gray-900 group-hover:text-blue-600 transition line-clamp-2 mb-1"
+                data-testid={`product-grid-title-${product.id}`}
+              >
                 {product.title}
               </h3>
               {product.author && (
-                <p className="text-sm text-gray-600 mb-2 line-clamp-1">by {product.author}</p>
+                <p 
+                  className="text-sm text-gray-600 mb-2 line-clamp-1"
+                  data-testid={`product-grid-author-${product.id}`}
+                >
+                  by {product.author}
+                </p>
               )}
               {product.price && (
-                <p className="text-lg font-bold text-green-600">
+                <p 
+                  className="text-lg font-bold text-green-600"
+                  data-testid={`product-grid-price-${product.id}`}
+                >
                   £{product.price.toFixed(2)}
                 </p>
               )}
