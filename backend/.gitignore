@@ -40,6 +40,12 @@ coverage/
 # Infrastructure
 .docker-data/
 
+# Storage directories
+storage/
+**/storage/
+playwright/
+**/.crawlee/
+
 # Build outputs
 dist/
 **/dist/
@@ -86,3 +92,9 @@ Thumbs.db
 
 # Infrastructure
 .docker-data/
+
+# Storage directories
+storage/
+**/storage/
+playwright/
+**/.crawlee/

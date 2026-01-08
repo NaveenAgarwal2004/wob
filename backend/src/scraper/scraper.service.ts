@@ -119,7 +119,14 @@ export class ScraperService {
       const navigations: Navigation[] = [];
       for (const item of navItems) {
         const slug = this.createSlug(item.title);
-        let nav = await this.navigationRepo.findOne({ where: { slug } });
+        
+        // Check for existing navigation by both slug and title to avoid duplicates
+        let nav = await this.navigationRepo.findOne({ 
+          where: [
+            { slug },
+            { title: item.title }
+          ] 
+        });
 
         if (!nav) {
           nav = this.navigationRepo.create({
