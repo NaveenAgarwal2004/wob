@@ -146,7 +146,7 @@ export class ScraperService {
       await this.updateJobStatus(job.id, ScrapeJobStatus.FAILED, error.message);
       throw error;
     } finally {
-      await Dataset.drop().catch(() => {});
+      // Dataset cleanup handled automatically
     }
   }
 
@@ -271,7 +271,7 @@ export class ScraperService {
       await this.updateJobStatus(job.id, ScrapeJobStatus.FAILED, error.message);
       throw error;
     } finally {
-      await Dataset.drop().catch(() => {});
+      // Dataset cleanup handled automatically
     }
   }
 
@@ -427,7 +427,7 @@ export class ScraperService {
       await this.updateJobStatus(job.id, ScrapeJobStatus.FAILED, error.message);
       throw error;
     } finally {
-      await Dataset.drop().catch(() => {});
+      // Dataset cleanup handled automatically
     }
   }
 
@@ -568,7 +568,7 @@ export class ScraperService {
       await this.updateJobStatus(job.id, ScrapeJobStatus.FAILED, error.message);
       throw error;
     } finally {
-      await Dataset.drop().catch(() => {});
+      // Dataset cleanup handled automatically
     }
   }
 
