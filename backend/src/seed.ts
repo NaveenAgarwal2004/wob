@@ -17,6 +17,7 @@ const AppDataSource = new DataSource({
   database: process.env.DATABASE_NAME,
   entities: [__dirname + '/entities/*.entity{.ts,.js}'],
   synchronize: false,
+  ssl: { rejectUnauthorized: false },
 });
 
 async function seed() {

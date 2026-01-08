@@ -2,7 +2,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from './database/database.module';
+import { ScraperModule } from './scraper/scraper.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -12,6 +14,11 @@ import { AppService } from './app.service';
       isGlobal: true,
     }),
     DatabaseModule,
+    // Rate limiting configuration
+    ThrottlerModule.forRoot([{
+      ttl: 60000, // 60 seconds
+      limit: 100, // 100 requests per minute
+    }]),
     // Initialize the Scrape Queue with Upstash Redis
     BullModule.forRootAsync({
       imports: [ConfigModule],
@@ -27,6 +34,7 @@ import { AppService } from './app.service';
         },
       }),
     }),
+    ScraperModule,
   ],
   controllers: [AppController],
   providers: [AppService],

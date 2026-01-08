@@ -30,10 +30,9 @@ import { ViewHistory } from '../entities/view-history.entity';
           ScrapeJob,
           ViewHistory,
         ],
-        synchronize: false, // NEVER use true in production
+        synchronize: false,
         logging: configService.get('NODE_ENV') === 'development',
         ssl: { rejectUnauthorized: false },
-        ssl: configService.get('NODE_ENV') === 'production' ? { rejectUnauthorized: false } : false,
       }),
     }),
   ],
