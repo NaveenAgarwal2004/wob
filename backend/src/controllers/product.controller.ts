@@ -27,6 +27,7 @@ export class ProductController {
     // Trigger scrape if empty
     if (result.products.length === 0) {
       await this.scrapeQueue.add('scrape-product', { 
+        type: 'product',
         id: categoryId,
         page: pagination.page,
         limit: pagination.limit
@@ -45,7 +46,7 @@ export class ProductController {
     
     // Trigger detail scrape if not present
     if (!product.detail) {
-      await this.scrapeQueue.add('scrape-product-detail', { id });
+      await this.scrapeQueue.add('scrape-product-detail', { type: 'product_detail', id });
     }
     
     return product;
@@ -55,7 +56,7 @@ export class ProductController {
   @ApiOperation({ summary: 'Refresh product data' })
   @ApiResponse({ status: 202, description: 'Scrape job queued' })
   async scrapeProduct(@Param('id') id: string) {
-    const job = await this.scrapeQueue.add('scrape-product-detail', { id, force: true });
+    const job = await this.scrapeQueue.add('scrape-product-detail', { type: 'product_detail', id, force: true });
     return {
       message: 'Scrape job queued',
       jobId: job.id,

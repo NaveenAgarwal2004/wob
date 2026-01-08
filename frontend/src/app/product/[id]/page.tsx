@@ -125,7 +125,7 @@ export default function ProductDetailPage() {
               )}
               {product?.price && (
                 <p className="text-3xl font-bold text-green-600 mb-6" data-testid="product-detail-price">
-                  £{product.price.toFixed(2)}
+                  £{typeof product.price === 'number' ? product.price.toFixed(2) : parseFloat(product.price).toFixed(2)}
                 </p>
               )}
 

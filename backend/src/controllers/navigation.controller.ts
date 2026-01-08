@@ -20,7 +20,7 @@ export class NavigationController {
     
     // Trigger scrape if empty or stale
     if (navigations.length === 0) {
-      await this.scrapeQueue.add('scrape-navigation', {});
+      await this.scrapeQueue.add('scrape-navigation', { type: 'navigation' });
     }
     
     return navigations;
@@ -38,7 +38,7 @@ export class NavigationController {
   @ApiOperation({ summary: 'Trigger scrape for navigation categories' })
   @ApiResponse({ status: 202, description: 'Scrape job queued' })
   async scrapeNavigation(@Param('id') id: string) {
-    const job = await this.scrapeQueue.add('scrape-category', { id, force: true });
+    const job = await this.scrapeQueue.add('scrape-category', { type: 'category', id, force: true });
     return {
       message: 'Scrape job queued',
       jobId: job.id,

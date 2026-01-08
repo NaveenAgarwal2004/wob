@@ -99,7 +99,7 @@ export default function ProductGrid({ categoryId }: ProductGridProps) {
                   className="text-lg font-bold text-green-600"
                   data-testid={`product-grid-price-${product.id}`}
                 >
-                  £{product.price.toFixed(2)}
+                  £{typeof product.price === 'number' ? product.price.toFixed(2) : parseFloat(product.price).toFixed(2)}
                 </p>
               )}
             </div>

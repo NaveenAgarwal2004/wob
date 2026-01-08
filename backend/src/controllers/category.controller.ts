@@ -20,7 +20,7 @@ export class CategoryController {
     
     // Trigger scrape if empty
     if (categories.length === 0) {
-      await this.scrapeQueue.add('scrape-category', { id: navigationId });
+      await this.scrapeQueue.add('scrape-category', { type: 'category', id: navigationId });
     }
     
     return categories;
@@ -38,7 +38,7 @@ export class CategoryController {
   @ApiOperation({ summary: 'Trigger scrape for category products' })
   @ApiResponse({ status: 202, description: 'Scrape job queued' })
   async scrapeCategory(@Param('id') id: string) {
-    const job = await this.scrapeQueue.add('scrape-product', { id, force: true });
+    const job = await this.scrapeQueue.add('scrape-product', { type: 'product', id, force: true });
     return {
       message: 'Scrape job queued',
       jobId: job.id,
