@@ -63,29 +63,37 @@ export class ScraperService {
 
           await page.waitForLoadState('networkidle', { timeout: 30000 });
 
-          // Extract navigation items from the main menu
+          // Shopify-specific selectors for World of Books navigation
           const navItems = await page.evaluate(() => {
             const items: { title: string; url: string }[] = [];
-            
-            // Try multiple selectors for navigation
+
+            // Shopify patterns for WoB
             const selectors = [
-              'nav a[href*="/c/"]',
-              '.nav-link[href*="/c/"]',
-              'header a[href*="/c/"]',
-              '.main-nav a[href*="/c/"]',
-              'a[href*="/en-gb/category/"]',
+              'nav.site-navigation a[href*="/collections/"]',
+              'ul.site-nav a[href*="/collections/"]',
+              '.site-nav__link[href*="/collections/"]',
+              'header a[href*="/collections/"]',
+              'nav a[href*="/en-gb/category/"]',
+              '.header-wrapper a[href*="/collections/"]',
             ];
 
             for (const selector of selectors) {
               const elements = document.querySelectorAll(selector);
-              elements.forEach((el: Element) => {
-                const anchor = el as HTMLAnchorElement;
-                const title = anchor.textContent?.trim();
-                const url = anchor.href;
-                if (title && url && !items.find(i => i.url === url)) {
-                  items.push({ title, url });
-                }
-              });
+              if (elements.length > 0) {
+                elements.forEach((el: Element) => {
+                  const anchor = el as HTMLAnchorElement;
+                  const title = anchor.textContent?.trim();
+                  const url = anchor.href;
+                  if (
+                    title &&
+                    url &&
+                    !title.match(/cart|search|account|login|register/i) &&
+                    !items.find((i) => i.url === url)
+                  ) {
+                    items.push({ title, url });
+                  }
+                });
+              }
             }
 
             return items;
@@ -103,12 +111,12 @@ export class ScraperService {
       const dataset = await Dataset.getData();
       let navItems = dataset.items[0]?.navItems || [];
 
-      // If no items found, create default navigation categories
+      // Hybrid approach: if no items found, use fallback categories
       if (navItems.length === 0) {
-        this.logger.warn('No navigation items found via scraping, using default categories');
+        this.logger.warn('No navigation items found via scraping, using fallback categories');
         navItems = [
           { title: 'Books', url: `${this.BASE_URL}/en-gb/category/books-bo` },
-          { title: 'Children\'s Books', url: `${this.BASE_URL}/en-gb/category/childrens-books-cb` },
+          { title: "Children's Books", url: `${this.BASE_URL}/en-gb/category/childrens-books-cb` },
           { title: 'Fiction', url: `${this.BASE_URL}/en-gb/category/fiction-f` },
           { title: 'Non-Fiction', url: `${this.BASE_URL}/en-gb/category/non-fiction-n` },
           { title: 'Academic & Educational', url: `${this.BASE_URL}/en-gb/category/academic-educational-ae` },
@@ -119,13 +127,9 @@ export class ScraperService {
       const navigations: Navigation[] = [];
       for (const item of navItems) {
         const slug = this.createSlug(item.title);
-        
-        // Check for existing navigation by both slug and title to avoid duplicates
-        let nav = await this.navigationRepo.findOne({ 
-          where: [
-            { slug },
-            { title: item.title }
-          ] 
+
+        let nav = await this.navigationRepo.findOne({
+          where: [{ slug }, { title: item.title }],
         });
 
         if (!nav) {
@@ -199,26 +203,28 @@ export class ScraperService {
           const categoryItems = await page.evaluate(() => {
             const items: { title: string; url: string }[] = [];
 
-            // Try multiple selectors for categories
+            // Shopify collection/category patterns
             const selectors = [
-              '.category-list a',
-              '.subcategory a',
-              '.category-nav a',
-              'a[href*="/category/"]',
-              '.sidebar a[href*="/c/"]',
-              '.filter-category a',
+              '.collection-filters a',
+              '.facets a',
+              '.sidebar a[href*="/collections/"]',
+              'aside a[href*="/collections/"]',
+              '.site-footer__linklist a[href*="/collections/"]',
+              'a[href*="/en-gb/category/"]',
             ];
 
             for (const selector of selectors) {
               const elements = document.querySelectorAll(selector);
-              elements.forEach((el: Element) => {
-                const anchor = el as HTMLAnchorElement;
-                const title = anchor.textContent?.trim();
-                const url = anchor.href;
-                if (title && url && !items.find(i => i.url === url)) {
-                  items.push({ title, url });
-                }
-              });
+              if (elements.length > 0) {
+                elements.forEach((el: Element) => {
+                  const anchor = el as HTMLAnchorElement;
+                  const title = anchor.textContent?.trim();
+                  const url = anchor.href;
+                  if (title && url && !items.find((i) => i.url === url)) {
+                    items.push({ title, url });
+                  }
+                });
+              }
             }
 
             return items;
@@ -233,9 +239,9 @@ export class ScraperService {
       const dataset = await Dataset.getData();
       let categoryItems = dataset.items[0]?.categoryItems || [];
 
-      // If no categories found, create some defaults based on navigation
+      // Fallback: create generic categories for this navigation
       if (categoryItems.length === 0) {
-        this.logger.warn('No category items found via scraping, using defaults');
+        this.logger.warn('No category items found via scraping, using fallback categories');
         categoryItems = [
           { title: `${navigation.title} - Featured`, url: `${navigation.sourceUrl}?sort=featured` },
           { title: `${navigation.title} - New Arrivals`, url: `${navigation.sourceUrl}?sort=new` },
@@ -282,7 +288,12 @@ export class ScraperService {
     }
   }
 
-  async scrapeProducts(categoryId: string, page = 1, limit = 20, force = false): Promise<{ products: Product[]; total: number }> {
+  async scrapeProducts(
+    categoryId: string,
+    page = 1,
+    limit = 20,
+    force = false,
+  ): Promise<{ products: Product[]; total: number }> {
     const category = await this.categoryRepo.findOne({ where: { id: categoryId } });
     if (!category) {
       throw new Error(`Category not found: ${categoryId}`);
@@ -336,40 +347,49 @@ export class ScraperService {
               url: string;
             }[] = [];
 
-            // Multiple selectors for product cards
+            // Shopify product card patterns for WoB
             const cardSelectors = [
               '.product-card',
               '.product-item',
-              '.product',
-              '[data-product]',
-              '.book-item',
-              '.search-result-item',
+              'div.product',
+              '.grid--uniform > div',
+              '.collection .product',
+              'article.product',
             ];
 
             for (const cardSelector of cardSelectors) {
               const cards = document.querySelectorAll(cardSelector);
               if (cards.length > 0) {
                 cards.forEach((card: Element) => {
-                  const titleEl = card.querySelector('.product-title, h3, h2, .title, [data-title], .name');
-                  const authorEl = card.querySelector('.product-author, .author, .by-line, [data-author]');
-                  const priceEl = card.querySelector('.price, .product-price, .cost, [data-price]');
+                  const titleEl = card.querySelector(
+                    '.product-card__title, .product__title, h3, h2, .title, a.product-link'
+                  );
+                  const authorEl = card.querySelector(
+                    '.product-meta__author, .author, .product__vendor, .by-line'
+                  );
+                  const priceEl = card.querySelector(
+                    '.price-item, .product__price, .price, .money'
+                  );
                   const imageEl = card.querySelector('img');
-                  const linkEl = card.querySelector('a[href*="product"], a[href*="book"], a[href]');
+                  const linkEl = card.querySelector('a[href*="/products/"], a.product-card__link');
 
                   const title = titleEl?.textContent?.trim() || '';
-                  const url = (linkEl as HTMLAnchorElement)?.href || '';
+                  const url = (linkEl as HTMLAnchorElement)?.href || (card as HTMLElement)?.closest('a')?.href || '';
 
-                  if (title && url && !items.find(i => i.url === url)) {
+                  if (title && url && !items.find((i) => i.url === url)) {
                     items.push({
                       title,
                       author: authorEl?.textContent?.trim() || '',
                       price: priceEl?.textContent?.trim() || '',
-                      imageUrl: (imageEl as HTMLImageElement)?.src || (imageEl as HTMLImageElement)?.dataset?.src || '',
+                      imageUrl:
+                        (imageEl as HTMLImageElement)?.src ||
+                        (imageEl as HTMLImageElement)?.dataset?.src ||
+                        '',
                       url,
                     });
                   }
                 });
-                break; // Found items, stop searching
+                break;
               }
             }
 
@@ -483,31 +503,44 @@ export class ScraperService {
 
           const detailData = await page.evaluate(() => {
             const description =
-              document.querySelector('.product-description, .description, .synopsis, [data-description]')?.textContent?.trim() || null;
+              document.querySelector(
+                '.product__description, .product-description, .description, .product__text'
+              )?.textContent?.trim() || null;
             const rating =
-              document.querySelector('.rating-value, [itemprop="ratingValue"], .stars-value, [data-rating]')?.textContent?.trim() || null;
+              document.querySelector(
+                '.rating-value, [itemprop="ratingValue"], .stars-value, .product__rating'
+              )?.textContent?.trim() || null;
             const reviewCount =
-              document.querySelector('.review-count, [itemprop="reviewCount"], .reviews-count')?.textContent?.trim() || null;
+              document.querySelector(
+                '.review-count, [itemprop="reviewCount"], .reviews-count, .product__review-count'
+              )?.textContent?.trim() || null;
 
             const reviews = Array.from(
-              document.querySelectorAll('.review-item, .review, .customer-review, [data-review]'),
+              document.querySelectorAll('.review-item, .review, .customer-review, .product-review')
             ).map((review: Element) => ({
               author:
-                (review.querySelector('.review-author, .author, .reviewer-name') as HTMLElement)?.textContent?.trim() || 'Anonymous',
+                (review.querySelector('.review-author, .author, .reviewer-name') as HTMLElement)?.textContent?.trim() ||
+                'Anonymous',
               rating: (review.querySelector('.review-rating, .rating, .stars') as HTMLElement)?.textContent?.trim() || '0',
-              text: (review.querySelector('.review-text, .text, .review-body') as HTMLElement)?.textContent?.trim() || '',
+              text:
+                (review.querySelector('.review-text, .text, .review-body, .review-content') as HTMLElement)?.textContent?.trim() ||
+                '',
             }));
 
             const recommendations = Array.from(
-              document.querySelectorAll('.recommended-product a, .related-product a, .similar-items a, [data-recommendation] a'),
-            ).map((el: Element) => (el as HTMLAnchorElement).href).filter(Boolean);
+              document.querySelectorAll('.recommended-product a, .related-product a, .product-recommendations a')
+            )
+              .map((el: Element) => (el as HTMLAnchorElement).href)
+              .filter(Boolean);
 
             const specs: Record<string, string> = {};
-            document.querySelectorAll('.product-specs tr, .specs-table tr, .product-info tr, [data-spec]').forEach((row: Element) => {
-              const label = (row.querySelector('th, .label, dt') as HTMLElement)?.textContent?.trim();
-              const value = (row.querySelector('td, .value, dd') as HTMLElement)?.textContent?.trim();
-              if (label && value) specs[label] = value;
-            });
+            document
+              .querySelectorAll('.product-specs tr, .product__details tr, .product-info tr, dl.product__details dt')
+              .forEach((row: Element) => {
+                const label = (row.querySelector('th, .label, dt') as HTMLElement)?.textContent?.trim();
+                const value = (row.querySelector('td, .value, dd') as HTMLElement)?.textContent?.trim();
+                if (label && value) specs[label] = value;
+              });
 
             return { description, rating, reviewCount, reviews, recommendations, specs };
           });
@@ -545,7 +578,6 @@ export class ScraperService {
 
       // Save reviews with deduplication
       if (detailData.reviews && detailData.reviews.length > 0) {
-        // Delete old reviews to avoid duplicates
         await this.reviewRepo.delete({ productId });
 
         for (const reviewData of detailData.reviews) {
