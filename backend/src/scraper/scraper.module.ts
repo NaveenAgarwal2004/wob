@@ -5,6 +5,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScraperService } from './scraper.service';
 import { ScraperProcessor } from './scraper.processor';
 import { CacheService } from './cache.service';
+import { AlgoliaService } from './algolia.service';
 import { Navigation } from '../entities/navigation.entity';
 import { Category } from '../entities/category.entity';
 import { Product } from '../entities/product.entity';
@@ -36,7 +37,7 @@ import { ScrapeJob } from '../entities/scrape-job.entity';
       },
     }),
   ],
-  providers: [ScraperService, ScraperProcessor, CacheService],
-  exports: [ScraperService, CacheService],
+  providers: [ScraperService, ScraperProcessor, CacheService, AlgoliaService],
+  exports: [ScraperService, CacheService, AlgoliaService],
 })
 export class ScraperModule {}
