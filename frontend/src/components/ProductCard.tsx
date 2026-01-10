@@ -48,12 +48,12 @@ export default function ProductCard({ product }: ProductCardProps) {
             by {product.author}
           </p>
         )}
-        {product.price && (
+        {product.price !== null && product.price !== undefined && (
           <p 
             className="text-lg font-bold text-green-600"
             data-testid={`product-price-${product.id}`}
           >
-            £{product.price.toFixed(2)}
+            £{Number(product.price).toFixed(2)}
           </p>
         )}
       </div>

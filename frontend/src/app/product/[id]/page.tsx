@@ -120,8 +120,8 @@ export default function ProductDetailPage() {
               <h1 className="text-3xl font-bold text-gray-900 mb-4">{data.title}</h1>
               {data.author && <p className="text-xl text-gray-600 mb-4">By {data.author}</p>}
               
-              {data.price && (
-                <p className="text-3xl font-bold text-green-600 mb-6">£{data.price.toFixed(2)}</p>
+              {data.price !== null && data.price !== undefined && (
+                <p className="text-3xl font-bold text-green-600 mb-6">£{Number(data.price).toFixed(2)}</p>
               )}
 
               {/* Ratings */}

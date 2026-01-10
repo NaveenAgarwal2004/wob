@@ -12,6 +12,7 @@ import { NavigationController } from './controllers/navigation.controller';
 import { CategoryController } from './controllers/category.controller';
 import { ProductController } from './controllers/product.controller';
 import { ViewHistoryController } from './controllers/view-history.controller';
+import { ScrapeJobController } from './controllers/scrape-job.controller';
 import { NavigationService } from './services/navigation.service';
 import { CategoryService } from './services/category.service';
 import { ProductService } from './services/product.service';
@@ -62,6 +63,7 @@ import { ScrapeJob } from './entities/scrape-job.entity';
     CategoryController, 
     ProductController, 
     ViewHistoryController,
+    ScrapeJobController,
   ],
   providers: [
     AppService,
