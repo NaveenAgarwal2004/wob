@@ -1,16 +1,25 @@
 # World of Books Product Explorer
 
-A production-ready, full-stack product exploration platform with on-demand web scraping capabilities for World of Books.
+A production-ready, full-stack product exploration platform with **Algolia API integration** for real-time product data from World of Books.
 
 ## 🚀 Features
 
-- **Real-time Scraping**: On-demand data retrieval from World of Books
+- **Algolia API Integration**: Direct API calls to World of Books' Algolia search index for real product data ✨
+- **Real-time Scraping**: On-demand data retrieval with hybrid approach (Algolia + Playwright)
 - **Smart Caching**: Intelligent caching with configurable TTL to minimize server load
 - **Responsive Design**: Fully responsive UI that works on desktop and mobile
 - **Accessible**: WCAG AA compliant with semantic HTML and keyboard navigation
 - **Queue System**: Async job processing for long-running scrapes
 - **Browsing History**: Track user navigation with both client-side and backend persistence
 - **Comprehensive**: Full product details including reviews, ratings, and recommendations
+
+## 🆕 Recent Updates
+
+**Algolia Integration Complete! (Option B)**
+- ✅ Replaced Playwright HTML scraping with direct Algolia API calls
+- ✅ Now fetches real product data (titles, authors, prices, images)
+- ✅ Fast, reliable, and ethical data retrieval
+- ✅ See [ALGOLIA_INTEGRATION.md](./ALGOLIA_INTEGRATION.md) for details
 
 ## 📋 Architecture
 
@@ -26,7 +35,8 @@ A production-ready, full-stack product exploration platform with on-demand web s
 **Backend**
 - NestJS with TypeScript
 - PostgreSQL database
-- Crawlee + Playwright for scraping
+- **Algolia API** for product search (World of Books integration) ✨
+- Crawlee + Playwright for detail page scraping
 - Bull queue with Redis
 - Swagger API documentation
 

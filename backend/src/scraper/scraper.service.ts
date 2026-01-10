@@ -9,6 +9,7 @@ import { ProductDetail } from '../entities/product-detail.entity';
 import { Review } from '../entities/review.entity';
 import { ScrapeJob, ScrapeJobStatus, ScrapeTargetType } from '../entities/scrape-job.entity';
 import { ConfigService } from '@nestjs/config';
+import { AlgoliaService } from './algolia.service';
 
 @Injectable()
 export class ScraperService {
@@ -31,6 +32,7 @@ export class ScraperService {
     @InjectRepository(ScrapeJob)
     private scrapeJobRepo: Repository<ScrapeJob>,
     private configService: ConfigService,
+    private algoliaService: AlgoliaService,
   ) {
     this.DELAY_MS = parseInt(this.configService.get<string>('SCRAPE_DELAY_MS', '2000'));
     this.MAX_RETRIES = parseInt(this.configService.get<string>('SCRAPE_MAX_RETRIES', '3'));
@@ -181,92 +183,32 @@ export class ScraperService {
 
     try {
       await this.updateJobStatus(job.id, ScrapeJobStatus.IN_PROGRESS);
-      this.logger.log(`Starting category scrape for: ${navigation.title}`);
+      this.logger.log(`Fetching categories for: ${navigation.title} via Algolia facets`);
 
-      const crawler = new PlaywrightCrawler({
-        requestHandlerTimeoutSecs: 60,
-        maxRequestRetries: this.MAX_RETRIES,
-        launchContext: {
-          launchOptions: {
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-          },
-        },
-        preNavigationHooks: [
-          async () => {
-            await this.randomDelay();
-          },
-        ],
-        requestHandler: async ({ page, log }) => {
-          await page.waitForLoadState('networkidle', { timeout: 30000 });
-
-          const categoryItems = await page.evaluate(() => {
-            const items: { title: string; url: string }[] = [];
-
-            // Shopify collection/category patterns
-            const selectors = [
-              '.collection-filters a',
-              '.facets a',
-              '.sidebar a[href*="/collections/"]',
-              'aside a[href*="/collections/"]',
-              '.site-footer__linklist a[href*="/collections/"]',
-              'a[href*="/en-gb/category/"]',
-            ];
-
-            for (const selector of selectors) {
-              const elements = document.querySelectorAll(selector);
-              if (elements.length > 0) {
-                elements.forEach((el: Element) => {
-                  const anchor = el as HTMLAnchorElement;
-                  const title = anchor.textContent?.trim();
-                  const url = anchor.href;
-                  if (title && url && !items.find((i) => i.url === url)) {
-                    items.push({ title, url });
-                  }
-                });
-              }
-            }
-
-            return items;
-          });
-
-          await Dataset.pushData({ categoryItems });
-        },
-      });
-
-      await crawler.run([navigation.sourceUrl]);
-
-      const dataset = await Dataset.getData();
-      let categoryItems = dataset.items[0]?.categoryItems || [];
-
-      // Fallback: create generic categories for this navigation
-      if (categoryItems.length === 0) {
-        this.logger.warn('No category items found via scraping, using fallback categories');
-        categoryItems = [
-          { title: `${navigation.title} - Featured`, url: `${navigation.sourceUrl}?sort=featured` },
-          { title: `${navigation.title} - New Arrivals`, url: `${navigation.sourceUrl}?sort=new` },
-          { title: `${navigation.title} - Best Sellers`, url: `${navigation.sourceUrl}?sort=bestselling` },
-        ];
-      }
+      // Use Algolia to get real categories from product_type facets
+      const categoryNames = await this.algoliaService.getCategories();
 
       const categories: Category[] = [];
-      for (const item of categoryItems) {
-        const slug = this.createSlug(item.title);
+      for (const categoryName of categoryNames.slice(0, 20)) { // Limit to 20 categories per navigation
+        const slug = this.createSlug(categoryName);
+        const categoryUrl = this.algoliaService.buildCategoryUrl(categoryName);
+
         let category = await this.categoryRepo.findOne({ where: { slug, navigationId } });
 
         if (!category) {
           category = this.categoryRepo.create({
             navigationId,
-            title: item.title,
+            title: categoryName,
             slug,
-            sourceUrl: item.url,
+            sourceUrl: categoryUrl,
             lastScrapedAt: new Date(),
+            productCount: 0, // Will be updated when products are scraped
           });
-          this.logger.log(`Creating new category: ${item.title}`);
+          this.logger.log(`Creating new category: ${categoryName}`);
         } else {
           category.lastScrapedAt = new Date();
-          category.sourceUrl = item.url;
-          this.logger.log(`Updating category: ${item.title}`);
+          category.sourceUrl = categoryUrl;
+          this.logger.log(`Updating category: ${categoryName}`);
         }
 
         categories.push(await this.categoryRepo.save(category));
@@ -277,79 +219,104 @@ export class ScraperService {
       await this.navigationRepo.save(navigation);
 
       await this.updateJobStatus(job.id, ScrapeJobStatus.COMPLETED);
-      this.logger.log(`Successfully scraped ${categories.length} categories`);
+      this.logger.log(`Successfully fetched ${categories.length} categories from Algolia`);
       return categories;
     } catch (error) {
-      this.logger.error(`Error scraping categories: ${error.message}`, error.stack);
+      this.logger.error(`Error fetching categories: ${error.message}`, error.stack);
       await this.updateJobStatus(job.id, ScrapeJobStatus.FAILED, error.message);
       throw error;
-    } finally {
-      // Dataset cleanup handled automatically
     }
   }
 
 
 async scrapeProducts(categoryId: string, page = 1, limit = 20, force = false): Promise<{ products: Product[]; total: number }> {
   const category = await this.categoryRepo.findOne({ where: { id: categoryId } });
-  if (!category) throw new Error(`Category not found: ${categoryId}`);
+  if (!category) {
+    throw new Error(`Category not found: ${categoryId}`);
+  }
 
-  this.logger.log(`Fetching products for ${category.title} via Algolia API`);
+  // Check cache unless forced
+  if (!force && category.lastScrapedAt) {
+    const cacheAge = Date.now() - category.lastScrapedAt.getTime();
+    const cacheTTL = parseInt(this.configService.get<string>('CACHE_TTL_SECONDS', '3600')) * 1000;
+    if (cacheAge < cacheTTL) {
+      this.logger.log(`Using cached products for category: ${category.title}`);
+      const [products, total] = await this.productRepo.findAndCount({
+        where: { categoryId },
+        skip: (page - 1) * limit,
+        take: limit,
+        order: { title: 'ASC' },
+      });
+      return { products, total };
+    }
+  }
+
+  const job = await this.createScrapeJob(category.sourceUrl || '', ScrapeTargetType.PRODUCT);
 
   try {
-    // Direct call to World of Books Algolia API
-    const algoliaUrl = `https://ar33g9njgj-dsn.algolia.net/1/indexes/shopify_products_us/query?x-algolia-agent=Algolia%20for%20JavaScript%20(4.14.2)%3B%20Browser&x-algolia-api-key=96c16938971ef89ae1d14e21494e2114&x-algolia-application-id=AR33G9NJGJ`;
+    await this.updateJobStatus(job.id, ScrapeJobStatus.IN_PROGRESS);
+    this.logger.log(`Fetching products for category: ${category.title} via Algolia API`);
 
-    const response = await fetch(algoliaUrl, {
-      method: 'POST',
-      body: JSON.stringify({
-        params: `query=${category.title}&hitsPerPage=${limit}&page=${page - 1}`
-      }),
-    });
-
-    const data = await response.json();
-    const hits = data.hits || [];
+    // Use AlgoliaService to search products by category title
+    const searchQuery = category.title;
+    const algoliaResponse = await this.algoliaService.searchProducts(
+      searchQuery,
+      page - 1, // Algolia uses 0-based pagination
+      limit,
+    );
 
     const products: Product[] = [];
-    for (const hit of hits) {
+    for (const hit of algoliaResponse.hits) {
       const sourceId = hit.objectID;
-      const sourceUrl = `${this.BASE_URL}/en-gb/products/${hit.handle}`;
+      const sourceUrl = this.algoliaService.buildProductUrl(hit.handle);
 
       let product = await this.productRepo.findOne({ where: { sourceId } });
 
-      // Clean price string (remove currency if present)
-      const price = parseFloat(hit.price) || 0;
+      // Extract author using AlgoliaService helper
+      const author = this.algoliaService.extractAuthor(hit);
+      
+      // Use price_min which is more reliable
+      const price = hit.price_min || hit.price || 0;
 
       if (!product) {
         product = this.productRepo.create({
           sourceId,
           title: hit.title,
-          author: hit.author || 'Unknown Author',
+          author: author || 'Unknown Author',
           price: price,
           currency: 'GBP',
-          // Use Algolia image or fallback to Unsplash
-          imageUrl: hit.image || 'https://images.unsplash.com/photo-1543003958-44becfe5d6d5', 
+          imageUrl: hit.image || 'https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=400',
           sourceUrl,
           categoryId,
           lastScrapedAt: new Date(),
         });
+        this.logger.log(`Creating new product: ${hit.title}`);
       } else {
+        product.title = hit.title;
+        product.author = author || product.author;
         product.price = price;
         product.imageUrl = hit.image || product.imageUrl;
         product.lastScrapedAt = new Date();
+        this.logger.log(`Updating product: ${hit.title}`);
       }
-      
+
       products.push(await this.productRepo.save(product));
     }
 
-    // Update category count
-    category.productCount = data.nbHits || 0;
+    // Update category metadata
+    category.productCount = algoliaResponse.nbHits;
+    category.lastScrapedAt = new Date();
     await this.categoryRepo.save(category);
 
-    return { products, total: data.nbHits || 0 };
+    await this.updateJobStatus(job.id, ScrapeJobStatus.COMPLETED);
+    this.logger.log(`Successfully scraped ${products.length} products (total: ${algoliaResponse.nbHits})`);
 
+    return { products, total: algoliaResponse.nbHits };
   } catch (error) {
-    this.logger.error(`Algolia scraping failed: ${error.message}`);
-    // Fallback: return empty array so UI doesn't crash
+    this.logger.error(`Algolia scraping failed: ${error.message}`, error.stack);
+    await this.updateJobStatus(job.id, ScrapeJobStatus.FAILED, error.message);
+    
+    // Return empty result on failure
     return { products: [], total: 0 };
   }
 }
