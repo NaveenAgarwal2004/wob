@@ -1,3 +1,4 @@
+// backend/src/database/database.module.ts
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -32,7 +33,8 @@ import { ViewHistory } from '../entities/view-history.entity';
         ],
         synchronize: false,
         logging: configService.get('NODE_ENV') === 'development',
-        ssl: { rejectUnauthorized: false },
+        // FIX: Use single SSL configuration for Neon
+        ssl: { rejectUnauthorized: false }, 
       }),
     }),
   ],
