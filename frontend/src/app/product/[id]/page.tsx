@@ -125,14 +125,14 @@ export default function ProductDetailPage() {
               )}
 
               {/* Ratings */}
-              {data.detail?.ratingsAvg && (
+              {data.detail?.ratingsAvg != null && (
                 <div className="flex items-center gap-2 mb-6">
                   <div className="flex items-center">
                     {[...Array(5)].map((_, i) => (
                       <Star
                         key={i}
                         className={`h-5 w-5 ${
-                          i < Math.floor(data.detail!.ratingsAvg!)
+                          i < Math.floor(Number(data.detail!.ratingsAvg))
                             ? 'text-yellow-400 fill-yellow-400'
                             : 'text-gray-300'
                         }`}
@@ -140,7 +140,7 @@ export default function ProductDetailPage() {
                     ))}
                   </div>
                   <span className="text-gray-600">
-                    {data.detail.ratingsAvg.toFixed(1)} ({data.detail.reviewsCount} reviews)
+                    {Number(data.detail.ratingsAvg).toFixed(1)} ({data.detail.reviewsCount} reviews)
                   </span>
                 </div>
               )}
