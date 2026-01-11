@@ -1,3 +1,4 @@
+// backend/src/scraper/scraper.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { PlaywrightCrawler, Dataset } from 'crawlee';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -38,138 +39,97 @@ export class ScraperService {
     this.MAX_RETRIES = parseInt(this.configService.get<string>('SCRAPE_MAX_RETRIES', '3'));
   }
 
+  /**
+   * Scrape top-level navigation categories
+   * Uses Algolia facets to get real categories
+   */
   async scrapeNavigations(): Promise<Navigation[]> {
-    const url = `${this.BASE_URL}/en-gb`;
-    const job = await this.createScrapeJob(url, ScrapeTargetType.NAVIGATION);
+    const job = await this.createScrapeJob(`${this.BASE_URL}/en-gb`, ScrapeTargetType.NAVIGATION);
 
     try {
       await this.updateJobStatus(job.id, ScrapeJobStatus.IN_PROGRESS);
-      this.logger.log('Starting navigation scrape');
+      this.logger.log('Starting navigation scrape via Algolia');
 
-      const crawler = new PlaywrightCrawler({
-        requestHandlerTimeoutSecs: 60,
-        maxRequestRetries: this.MAX_RETRIES,
-        launchContext: {
-          launchOptions: {
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-          },
-        },
-        preNavigationHooks: [
-          async () => {
-            await this.randomDelay();
-          },
-        ],
-        requestHandler: async ({ page, request, log }) => {
-          log.info(`Scraping navigations from: ${request.url}`);
+      // Use Algolia to get product_type facets (these are the main categories)
+      const categories = await this.algoliaService.getCategories();
 
-          await page.waitForLoadState('networkidle', { timeout: 30000 });
-
-          // Shopify-specific selectors for World of Books navigation
-          const navItems = await page.evaluate(() => {
-            const items: { title: string; url: string }[] = [];
-
-            // Shopify patterns for WoB
-            const selectors = [
-              'nav.site-navigation a[href*="/collections/"]',
-              'ul.site-nav a[href*="/collections/"]',
-              '.site-nav__link[href*="/collections/"]',
-              'header a[href*="/collections/"]',
-              'nav a[href*="/en-gb/category/"]',
-              '.header-wrapper a[href*="/collections/"]',
-            ];
-
-            for (const selector of selectors) {
-              const elements = document.querySelectorAll(selector);
-              if (elements.length > 0) {
-                elements.forEach((el: Element) => {
-                  const anchor = el as HTMLAnchorElement;
-                  const title = anchor.textContent?.trim();
-                  const url = anchor.href;
-                  if (
-                    title &&
-                    url &&
-                    !title.match(/cart|search|account|login|register/i) &&
-                    !items.find((i) => i.url === url)
-                  ) {
-                    items.push({ title, url });
-                  }
-                });
-              }
-            }
-
-            return items;
-          });
-
-          await Dataset.pushData({ navItems });
-        },
-        failedRequestHandler: async ({ request, log }, error) => {
-          log.error(`Request failed: ${request.url}`, { error: error.message });
-        },
-      });
-
-      await crawler.run([url]);
-
-      const dataset = await Dataset.getData();
-      let navItems = dataset.items[0]?.navItems || [];
-
-      // Hybrid approach: if no items found, use fallback categories
-      if (navItems.length === 0) {
-        this.logger.warn('No navigation items found via scraping, using fallback categories');
-        navItems = [
-          { title: 'Books', url: `${this.BASE_URL}/en-gb/category/books-bo` },
-          { title: "Children's Books", url: `${this.BASE_URL}/en-gb/category/childrens-books-cb` },
-          { title: 'Fiction', url: `${this.BASE_URL}/en-gb/category/fiction-f` },
-          { title: 'Non-Fiction', url: `${this.BASE_URL}/en-gb/category/non-fiction-n` },
-          { title: 'Academic & Educational', url: `${this.BASE_URL}/en-gb/category/academic-educational-ae` },
-        ];
+      if (categories.length === 0) {
+        throw new Error('No categories found from Algolia');
       }
 
-      // Save to database with deduplication
-      const navigations: Navigation[] = [];
-      for (const item of navItems) {
-        const slug = this.createSlug(item.title);
+      // Create navigation entries for major category groups
+      const navigationGroups = this.groupCategoriesIntoNavigations(categories);
 
-        let nav = await this.navigationRepo.findOne({
-          where: [{ slug }, { title: item.title }],
-        });
+      const navigations: Navigation[] = [];
+      for (const [navTitle, categoryList] of Object.entries(navigationGroups)) {
+        const slug = this.createSlug(navTitle);
+        let nav = await this.navigationRepo.findOne({ where: [{ slug }, { title: navTitle }] });
 
         if (!nav) {
           nav = this.navigationRepo.create({
-            title: item.title,
+            title: navTitle,
             slug,
-            sourceUrl: item.url,
+            sourceUrl: `${this.BASE_URL}/en-gb/collections/${slug}`,
             lastScrapedAt: new Date(),
           });
-          this.logger.log(`Creating new navigation: ${item.title}`);
+          this.logger.log(`Creating new navigation: ${navTitle}`);
         } else {
           nav.lastScrapedAt = new Date();
-          nav.sourceUrl = item.url;
-          this.logger.log(`Updating navigation: ${item.title}`);
+          this.logger.log(`Updating navigation: ${navTitle}`);
         }
 
         navigations.push(await this.navigationRepo.save(nav));
       }
 
       await this.updateJobStatus(job.id, ScrapeJobStatus.COMPLETED);
-      this.logger.log(`Successfully scraped ${navigations.length} navigations`);
+      this.logger.log(`Successfully created ${navigations.length} navigations from Algolia`);
       return navigations;
     } catch (error) {
       this.logger.error(`Error scraping navigations: ${error.message}`, error.stack);
       await this.updateJobStatus(job.id, ScrapeJobStatus.FAILED, error.message);
       throw error;
-    } finally {
-      // Dataset cleanup handled automatically
     }
   }
 
+  /**
+   * Group Algolia categories into logical navigation groups
+   */
+  private groupCategoriesIntoNavigations(categories: string[]): Record<string, string[]> {
+    const groups: Record<string, string[]> = {
+      'Books': [],
+      'Children\'s Books': [],
+      'Non-Fiction': [],
+      'Fiction': [],
+      'Other': [],
+    };
+
+    for (const category of categories) {
+      const lower = category.toLowerCase();
+      if (lower.includes('child') || lower.includes('kid') || lower.includes('young')) {
+        groups['Children\'s Books'].push(category);
+      } else if (lower.includes('fiction') && !lower.includes('non')) {
+        groups['Fiction'].push(category);
+      } else if (lower.includes('non-fiction') || lower.includes('history') || lower.includes('biography')) {
+        groups['Non-Fiction'].push(category);
+      } else {
+        groups['Books'].push(category);
+      }
+    }
+
+    // Remove empty groups
+    return Object.fromEntries(Object.entries(groups).filter(([_, cats]) => cats.length > 0));
+  }
+
+  /**
+   * Scrape categories for a navigation using Algolia facets
+   */
   async scrapeCategories(navigationId: string, force = false): Promise<Category[]> {
     const navigation = await this.navigationRepo.findOne({ where: { id: navigationId } });
     if (!navigation) {
       throw new Error(`Navigation not found: ${navigationId}`);
     }
 
-    // Check cache unless forced
+    // Check cache
     if (!force && navigation.lastScrapedAt) {
       const cacheAge = Date.now() - navigation.lastScrapedAt.getTime();
       const cacheTTL = parseInt(this.configService.get<string>('CACHE_TTL_SECONDS', '3600')) * 1000;
@@ -183,13 +143,16 @@ export class ScraperService {
 
     try {
       await this.updateJobStatus(job.id, ScrapeJobStatus.IN_PROGRESS);
-      this.logger.log(`Fetching categories for: ${navigation.title} via Algolia facets`);
+      this.logger.log(`Fetching categories for: ${navigation.title} via Algolia`);
 
-      // Use Algolia to get real categories from product_type facets
-      const categoryNames = await this.algoliaService.getCategories();
+      // Get all product_type facets from Algolia
+      const allCategories = await this.algoliaService.getCategories();
+
+      // Filter categories relevant to this navigation
+      const relevantCategories = this.filterCategoriesForNavigation(navigation.title, allCategories);
 
       const categories: Category[] = [];
-      for (const categoryName of categoryNames.slice(0, 20)) { // Limit to 20 categories per navigation
+      for (const categoryName of relevantCategories.slice(0, 20)) {
         const slug = this.createSlug(categoryName);
         const categoryUrl = this.algoliaService.buildCategoryUrl(categoryName);
 
@@ -202,7 +165,7 @@ export class ScraperService {
             slug,
             sourceUrl: categoryUrl,
             lastScrapedAt: new Date(),
-            productCount: 0, // Will be updated when products are scraped
+            productCount: 0,
           });
           this.logger.log(`Creating new category: ${categoryName}`);
         } else {
@@ -214,12 +177,11 @@ export class ScraperService {
         categories.push(await this.categoryRepo.save(category));
       }
 
-      // Update navigation last scraped
       navigation.lastScrapedAt = new Date();
       await this.navigationRepo.save(navigation);
 
       await this.updateJobStatus(job.id, ScrapeJobStatus.COMPLETED);
-      this.logger.log(`Successfully fetched ${categories.length} categories from Algolia`);
+      this.logger.log(`Successfully fetched ${categories.length} categories`);
       return categories;
     } catch (error) {
       this.logger.error(`Error fetching categories: ${error.message}`, error.stack);
@@ -228,195 +190,288 @@ export class ScraperService {
     }
   }
 
-
-async scrapeProducts(categoryId: string, page = 1, limit = 20, force = false): Promise<{ products: Product[]; total: number }> {
-  const category = await this.categoryRepo.findOne({ where: { id: categoryId } });
-  if (!category) {
-    throw new Error(`Category not found: ${categoryId}`);
+  /**
+   * Filter categories relevant to a specific navigation
+   */
+  private filterCategoriesForNavigation(navTitle: string, allCategories: string[]): string[] {
+    const lower = navTitle.toLowerCase();
+    
+    if (lower.includes('child')) {
+      return allCategories.filter(c => 
+        c.toLowerCase().includes('child') || 
+        c.toLowerCase().includes('kid') ||
+        c.toLowerCase().includes('young')
+      );
+    }
+    
+    if (lower === 'fiction') {
+      return allCategories.filter(c => 
+        c.toLowerCase().includes('fiction') && 
+        !c.toLowerCase().includes('non')
+      );
+    }
+    
+    if (lower.includes('non-fiction')) {
+      return allCategories.filter(c => 
+        c.toLowerCase().includes('non-fiction') ||
+        c.toLowerCase().includes('history') ||
+        c.toLowerCase().includes('biography')
+      );
+    }
+    
+    // Default: return all categories
+    return allCategories;
   }
 
-  // Check cache unless forced
-  if (!force && category.lastScrapedAt) {
-    const cacheAge = Date.now() - category.lastScrapedAt.getTime();
-    const cacheTTL = parseInt(this.configService.get<string>('CACHE_TTL_SECONDS', '3600')) * 1000;
-    if (cacheAge < cacheTTL) {
-      this.logger.log(`Using cached products for category: ${category.title}`);
+  /**
+   * Scrape products from Algolia API for a category
+   * This is the CRITICAL method that was failing
+   */
+  async scrapeProducts(
+    categoryId: string,
+    page = 1,
+    limit = 20,
+    force = false
+  ): Promise<{ products: Product[]; total: number }> {
+    const category = await this.categoryRepo.findOne({ where: { id: categoryId } });
+    if (!category) {
+      throw new Error(`Category not found: ${categoryId}`);
+    }
+
+    // Check cache
+    if (!force && category.lastScrapedAt) {
+      const cacheAge = Date.now() - category.lastScrapedAt.getTime();
+      const cacheTTL = parseInt(this.configService.get<string>('CACHE_TTL_SECONDS', '3600')) * 1000;
+      if (cacheAge < cacheTTL) {
+        this.logger.log(`Using cached products for category: ${category.title}`);
+        const [products, total] = await this.productRepo.findAndCount({
+          where: { categoryId },
+          skip: (page - 1) * limit,
+          take: limit,
+          order: { title: 'ASC' },
+        });
+        return { products, total };
+      }
+    }
+
+    const job = await this.createScrapeJob(category.sourceUrl || '', ScrapeTargetType.PRODUCT);
+
+    try {
+      await this.updateJobStatus(job.id, ScrapeJobStatus.IN_PROGRESS);
+      this.logger.log(`Fetching products for category: ${category.title} from Algolia`);
+
+      // FIX: Use getProductsByCategory which uses facetFilters correctly
+      const algoliaResponse = await this.algoliaService.getProductsByCategory(
+        category.title,
+        page - 1, // Algolia uses 0-based indexing
+        limit
+      );
+
+      this.logger.log(`Algolia returned ${algoliaResponse.hits.length} products for "${category.title}"`);
+
+      const products: Product[] = [];
+      for (const hit of algoliaResponse.hits) {
+        try {
+          const sourceId = hit.objectID;
+          const sourceUrl = this.algoliaService.buildProductUrl(hit.productHandle);
+
+          // Extract fields using AlgoliaService helpers
+          const title = this.algoliaService.extractTitle(hit);
+          const author = this.algoliaService.extractAuthor(hit) || 'Unknown Author';
+          const price = this.algoliaService.extractPrice(hit);
+          const imageUrl = this.algoliaService.extractImageUrl(hit);
+
+          // FIX: Use upsert pattern to avoid duplicates
+          let product = await this.productRepo.findOne({ where: { sourceId } });
+
+          if (!product) {
+            product = this.productRepo.create({
+              sourceId,
+              title,
+              author,
+              price: price ? parseFloat(price.toString()) : null,
+              currency: 'GBP',
+              imageUrl,
+              sourceUrl,
+              categoryId,
+              lastScrapedAt: new Date(),
+            });
+            this.logger.debug(`Creating new product: ${title}`);
+          } else {
+            product.title = title;
+            product.author = author;
+            product.price = price ? parseFloat(price.toString()) : product.price;
+            product.imageUrl = imageUrl;
+            product.categoryId = categoryId;
+            product.lastScrapedAt = new Date();
+            this.logger.debug(`Updating product: ${title}`);
+          }
+
+          products.push(await this.productRepo.save(product));
+        } catch (productError) {
+          this.logger.error(`Failed to process product ${hit.objectID}: ${productError.message}`);
+          continue; // Skip this product and continue with others
+        }
+      }
+
+      // Update category metadata
+      category.productCount = algoliaResponse.nbHits;
+      category.lastScrapedAt = new Date();
+      await this.categoryRepo.save(category);
+
+      await this.updateJobStatus(job.id, ScrapeJobStatus.COMPLETED);
+      this.logger.log(`Successfully scraped ${products.length} products (total available: ${algoliaResponse.nbHits})`);
+
+      return { products, total: algoliaResponse.nbHits };
+    } catch (error) {
+      this.logger.error(`Algolia scraping failed for category ${category.title}: ${error.message}`, error.stack);
+      await this.updateJobStatus(job.id, ScrapeJobStatus.FAILED, error.message);
+      
+      // FIX: Return cached data on error instead of empty result
+      this.logger.warn('Attempting to return cached products due to error');
       const [products, total] = await this.productRepo.findAndCount({
         where: { categoryId },
         skip: (page - 1) * limit,
         take: limit,
         order: { title: 'ASC' },
       });
+      
       return { products, total };
     }
   }
 
-  const job = await this.createScrapeJob(category.sourceUrl || '', ScrapeTargetType.PRODUCT);
+  /**
+   * Scrape product details using Playwright (for rich content like reviews)
+   */
+  async scrapeProductDetail(productId: string, force = false): Promise<ProductDetail> {
+    const product = await this.productRepo.findOne({ 
+      where: { id: productId },
+      relations: ['detail'] 
+    });
+    
+    if (!product) {
+      throw new Error(`Product not found: ${productId}`);
+    }
 
-  try {
-    await this.updateJobStatus(job.id, ScrapeJobStatus.IN_PROGRESS);
-    this.logger.log(`Fetching products for category: ${category.title} via Algolia API`);
+    // Use existing detail if fresh (< 24h)
+    if (!force && product.lastScrapedAt && product.detail) {
+      const oneDay = 24 * 60 * 60 * 1000;
+      if (Date.now() - product.lastScrapedAt.getTime() < oneDay) {
+        this.logger.log(`Using cached detail for product: ${product.title}`);
+        return product.detail;
+      }
+    }
 
-    // Use AlgoliaService to search products by category title
-    const searchQuery = category.title;
-    const algoliaResponse = await this.algoliaService.searchProducts(
-      searchQuery,
-      page - 1, // Algolia uses 0-based pagination
-      limit,
-    );
+    const job = await this.createScrapeJob(product.sourceUrl, ScrapeTargetType.PRODUCT_DETAIL);
 
-    const products: Product[] = [];
-    for (const hit of algoliaResponse.hits) {
-      const sourceId = hit.objectID;
-      const sourceUrl = this.algoliaService.buildProductUrl(hit.handle);
+    try {
+      await this.updateJobStatus(job.id, ScrapeJobStatus.IN_PROGRESS);
+      this.logger.log(`Scraping detail for product: ${product.title}`);
 
-      let product = await this.productRepo.findOne({ where: { sourceId } });
+      const crawler = new PlaywrightCrawler({
+        requestHandlerTimeoutSecs: 30,
+        maxRequestRetries: this.MAX_RETRIES,
+        launchContext: {
+          launchOptions: {
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+          },
+        },
+        preNavigationHooks: [async () => await this.randomDelay()],
+        requestHandler: async ({ page, log }) => {
+          try {
+            await page.waitForLoadState('networkidle', { timeout: 15000 });
+            
+            const data = await page.evaluate(() => {
+              const description = document.querySelector('.product-description, #description, .description, [itemprop="description"]')?.textContent?.trim() || 'No description available.';
+              
+              const reviewCountEl = document.querySelector('.review-count, .stars .count, [itemprop="reviewCount"]');
+              const reviewCount = reviewCountEl ? parseInt(reviewCountEl.textContent?.replace(/\D/g, '') || '0') : 0;
+              
+              const ratingEl = document.querySelector('.rating-value, .stars .value, [itemprop="ratingValue"]');
+              const ratingsAvg = ratingEl ? parseFloat(ratingEl.textContent?.trim() || '0') : 0;
 
-      // Extract author using AlgoliaService helper
-      const author = this.algoliaService.extractAuthor(hit);
-      
-      // Use price_min which is more reliable
-      const price = hit.price_min || hit.price || 0;
+              const specs: Record<string, string> = {};
+              document.querySelectorAll('table.specs tr, .product-attributes li, .product-details dt').forEach(row => {
+                const key = row.querySelector('th, strong, dt')?.textContent?.replace(':', '').trim();
+                const val = row.querySelector('td, span, dd')?.textContent?.trim();
+                if (key && val) specs[key] = val;
+              });
 
-      if (!product) {
-        product = this.productRepo.create({
-          sourceId,
-          title: hit.title,
-          author: author || 'Unknown Author',
-          price: price,
-          currency: 'GBP',
-          imageUrl: hit.image || 'https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=400',
-          sourceUrl,
-          categoryId,
-          lastScrapedAt: new Date(),
+              return { description, reviewCount, ratingsAvg, specs };
+            });
+
+            await Dataset.pushData(data);
+          } catch (evalError) {
+            log.error(`Failed to evaluate page: ${evalError.message}`);
+            await Dataset.pushData({ 
+              description: 'Failed to load description', 
+              reviewCount: 0, 
+              ratingsAvg: 0, 
+              specs: {} 
+            });
+          }
+        },
+        failedRequestHandler: async ({ request, log }, error) => {
+          log.error(`Request failed for ${request.url}: ${error.message}`);
+        },
+      });
+
+      await crawler.run([product.sourceUrl]);
+      const dataset = await Dataset.getData();
+      const data = dataset.items[0] || {};
+
+      // Upsert ProductDetail
+      let detail = await this.productDetailRepo.findOne({ where: { productId } });
+      if (!detail) {
+        detail = this.productDetailRepo.create({
+          productId,
+          description: data.description || 'No description available',
+          reviewsCount: data.reviewCount || 0,
+          ratingsAvg: data.ratingsAvg || null,
+          specs: data.specs || {},
+          recommendations: [],
         });
-        this.logger.log(`Creating new product: ${hit.title}`);
+        this.logger.log(`Creating new product detail for: ${product.title}`);
       } else {
-        product.title = hit.title;
-        product.author = author || product.author;
-        product.price = price;
-        product.imageUrl = hit.image || product.imageUrl;
-        product.lastScrapedAt = new Date();
-        this.logger.log(`Updating product: ${hit.title}`);
+        detail.description = data.description || detail.description;
+        detail.reviewsCount = data.reviewCount || detail.reviewsCount;
+        detail.ratingsAvg = data.ratingsAvg || detail.ratingsAvg;
+        detail.specs = data.specs || detail.specs;
+        this.logger.log(`Updating product detail for: ${product.title}`);
       }
 
-      products.push(await this.productRepo.save(product));
-    }
+      await this.productDetailRepo.save(detail);
+      
+      // Update product timestamp
+      product.lastScrapedAt = new Date();
+      await this.productRepo.save(product);
 
-    // Update category metadata
-    category.productCount = algoliaResponse.nbHits;
-    category.lastScrapedAt = new Date();
-    await this.categoryRepo.save(category);
-
-    await this.updateJobStatus(job.id, ScrapeJobStatus.COMPLETED);
-    this.logger.log(`Successfully scraped ${products.length} products (total: ${algoliaResponse.nbHits})`);
-
-    return { products, total: algoliaResponse.nbHits };
-  } catch (error) {
-    this.logger.error(`Algolia scraping failed: ${error.message}`, error.stack);
-    await this.updateJobStatus(job.id, ScrapeJobStatus.FAILED, error.message);
-    
-    // Return empty result on failure
-    return { products: [], total: 0 };
-  }
-}
-
-// REPLACE scrapeProductDetail with this Hybrid implementation
-async scrapeProductDetail(productId: string, force = false): Promise<ProductDetail> {
-  const product = await this.productRepo.findOne({ 
-    where: { id: productId },
-    relations: ['detail'] 
-  });
-  
-  if (!product) throw new Error(`Product not found: ${productId}`);
-
-  // Use existing detail if fresh (< 24h)
-  if (!force && product.lastScrapedAt && product.detail) {
-    const oneDay = 24 * 60 * 60 * 1000;
-    if (Date.now() - product.lastScrapedAt.getTime() < oneDay) {
-      return product.detail;
-    }
-  }
-
-  // Use Playwright for the detail page as it has rich text (Reviews, Description)
-  const job = await this.createScrapeJob(product.sourceUrl, ScrapeTargetType.PRODUCT_DETAIL);
-  await this.updateJobStatus(job.id, ScrapeJobStatus.IN_PROGRESS);
-
-  try {
-    const crawler = new PlaywrightCrawler({
-      // We only need 1 page, so be aggressive with timeouts
-      requestHandlerTimeoutSecs: 30, 
-      requestHandler: async ({ page }) => {
-        // Wait for description to verify page load
-        try {
-          await page.waitForSelector('.product-description, .description', { timeout: 10000 });
-        } catch (e) {
-          this.logger.warn(`Description selector not found for ${product.sourceUrl}`);
-        }
-
-        const data = await page.evaluate(() => {
-          // Robust selectors for WoB detail page
-          const description = document.querySelector('.product-description, #description, .description')?.textContent?.trim() || 'No description available.';
-          
-          // Reviews often load dynamically or might be missing
-          const reviewCountText = document.querySelector('.review-count, .stars .count')?.textContent || '0';
-          const reviewCount = parseInt(reviewCountText.replace(/\D/g, '')) || 0;
-          
-          const ratingText = document.querySelector('.rating-value, .stars .value')?.textContent || '0';
-          const ratingsAvg = parseFloat(ratingText) || 0;
-
-          // Extract basic table specs
-          const specs: Record<string, string> = {};
-          document.querySelectorAll('table.specs tr, .product-attributes li').forEach(row => {
-            const key = row.querySelector('th, strong')?.textContent?.replace(':', '').trim();
-            const val = row.querySelector('td, span')?.textContent?.trim();
-            if (key && val) specs[key] = val;
-          });
-
-          return { description, reviewCount, ratingsAvg, specs };
-        });
-
-        await Dataset.pushData(data);
-      },
-    });
-
-    await crawler.run([product.sourceUrl]);
-    const dataset = await Dataset.getData();
-    const data = dataset.items[0] || {};
-
-    // Upsert ProductDetail
-    let detail = await this.productDetailRepo.findOne({ where: { productId } });
-    if (!detail) {
-      detail = this.productDetailRepo.create({
+      await this.updateJobStatus(job.id, ScrapeJobStatus.COMPLETED);
+      this.logger.log(`Successfully scraped detail for: ${product.title}`);
+      
+      return detail;
+    } catch (error) {
+      this.logger.error(`Failed to scrape detail for ${product.title}: ${error.message}`, error.stack);
+      await this.updateJobStatus(job.id, ScrapeJobStatus.FAILED, error.message);
+      
+      // Return existing detail or create minimal one
+      if (product.detail) {
+        return product.detail;
+      }
+      
+      const minimalDetail = this.productDetailRepo.create({
         productId,
-        description: data.description,
-        reviewsCount: data.reviewCount,
-        ratingsAvg: data.ratingsAvg,
-        specs: data.specs,
-        recommendations: [] // Recommendations are heavy, skip for MVP
+        description: 'Failed to load description',
+        reviewsCount: 0,
+        ratingsAvg: null,
+        specs: {},
+        recommendations: [],
       });
-    } else {
-      detail.description = data.description;
-      detail.reviewsCount = data.reviewCount;
-      detail.ratingsAvg = data.ratingsAvg;
-      detail.specs = data.specs;
+      
+      return this.productDetailRepo.save(minimalDetail);
     }
-
-    await this.productDetailRepo.save(detail);
-    
-    // Mark job complete
-    await this.updateJobStatus(job.id, ScrapeJobStatus.COMPLETED);
-    
-    return detail;
-
-  } catch (error) {
-    this.logger.error(`Failed to scrape detail: ${error.message}`);
-    await this.updateJobStatus(job.id, ScrapeJobStatus.FAILED, error.message);
-    throw error;
   }
-}
-
-
 
   // Helper methods
   private async createScrapeJob(targetUrl: string, targetType: ScrapeTargetType): Promise<ScrapeJob> {
@@ -449,26 +504,8 @@ async scrapeProductDetail(productId: string, force = false): Promise<ProductDeta
       .replace(/^-+|-+$/g, '');
   }
 
-  private extractSourceId(url: string): string {
-    const match = url.match(/\/([^\/]+)\/?$/);
-    return match ? match[1] : `id-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  private parsePrice(priceText: string): number | null {
-    if (!priceText) return null;
-    const match = priceText.match(/[\d.]+/);
-    return match ? parseFloat(match[0]) : null;
-  }
-
-  private parseRating(ratingText: string | null): number | null {
-    if (!ratingText) return null;
-    const match = ratingText.match(/[\d.]+/);
-    return match ? parseFloat(match[0]) : null;
-  }
-
   private async randomDelay(): Promise<void> {
     const delay = this.DELAY_MS + Math.random() * 1000;
-    this.logger.debug(`Waiting ${Math.round(delay)}ms before next request`);
     await new Promise((resolve) => setTimeout(resolve, delay));
   }
 }

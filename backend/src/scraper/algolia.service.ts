@@ -1,44 +1,41 @@
+// backend/src/scraper/algolia.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
 export interface AlgoliaProduct {
   objectID: string;
-  title: string;
-  handle: string;
-  body_html: string;
-  vendor: string;
-  product_type: string;
+  shortTitle: string;
+  longTitle: string;
+  author: string;
+  isbn10: string;
+  isbn13: string;
+  bindingType: string;
+  publisher: string;
+  fromPrice: number;
+  priceRanges: string[];
+  productHandle: string;
+  hierarchicalCategories: {
+    lvl0?: string;
+    lvl1?: string;
+    lvl2?: string;
+  };
+  productType: string;
+  quantity: number;
+  inStock: boolean;
+  seriesTitle?: string;
+  imageURL: string;
+  datePublished?: string;
+  yearPublished?: number;
+  genre?: string;
   tags: string[];
-  price: number;
-  price_min: number;
-  price_max: number;
-  variants_count: number;
-  image: string;
-  images: {
-    src: string;
-    width: number;
-    height: number;
-    alt?: string;
-  }[];
-  inventory_management: string;
-  inventory_policy: string;
-  inventory_quantity: number;
-  compare_at_price_min: number;
-  compare_at_price_max: number;
-  meta: {
-    author?: string;
-    isbn?: string;
-    format?: string;
-    publisher?: string;
-    binding?: string;
-    condition?: string;
-    [key: string]: any;
-  };
-  named_tags?: {
-    author?: string[];
-    [key: string]: string[] | undefined;
-  };
+  categories: string[];
+  isUk: boolean;
+  isUsa: boolean;
+  isUsed: boolean;
+  isNew: boolean;
+  availableConditions: string[];
+  bestConditionPrice?: number;
 }
 
 export interface AlgoliaSearchResponse {
@@ -49,15 +46,7 @@ export interface AlgoliaSearchResponse {
   hitsPerPage: number;
   processingTimeMS: number;
   query: string;
-}
-
-export interface AlgoliaFacetResponse {
-  facetHits: {
-    value: string;
-    count: number;
-  }[];
-  exhaustiveFacetsCount: boolean;
-  processingTimeMS: number;
+  facets?: Record<string, Record<string, number>>;
 }
 
 @Injectable()
@@ -73,7 +62,7 @@ export class AlgoliaService {
     this.appId = this.configService.get<string>('ALGOLIA_APP_ID', 'AR33G9NJGJ');
     this.apiKey = this.configService.get<string>('ALGOLIA_API_KEY', '96c16938971ef89ae1d14e21494e2114');
     this.indexName = this.configService.get<string>('ALGOLIA_INDEX_NAME', 'shopify_products_us');
-    this.baseUrl = `https://${this.appId}-dsn.algolia.net/1/indexes`;
+    this.baseUrl = `https://${this.appId}-dsn.algolia.net/1/indexes/${this.indexName}`;
     this.DELAY_MS = parseInt(this.configService.get<string>('SCRAPE_DELAY_MS', '500'));
   }
 
@@ -103,7 +92,7 @@ export class AlgoliaService {
   ): Promise<AlgoliaSearchResponse> {
     await this.delay();
 
-    const url = `${this.baseUrl}/${this.indexName}/query`;
+    const url = `${this.baseUrl}/query`;
     
     const requestBody: any = {
       query,
@@ -111,24 +100,35 @@ export class AlgoliaService {
       hitsPerPage,
       attributesToRetrieve: [
         'objectID',
-        'title',
-        'handle',
-        'body_html',
-        'vendor',
-        'product_type',
+        'shortTitle',
+        'longTitle',
+        'author',
+        'isbn10',
+        'isbn13',
+        'bindingType',
+        'publisher',
+        'fromPrice',
+        'priceRanges',
+        'productHandle',
+        'hierarchicalCategories',
+        'productType',
+        'quantity',
+        'inStock',
+        'seriesTitle',
+        'imageURL',
+        'datePublished',
+        'yearPublished',
+        'genre',
         'tags',
-        'price',
-        'price_min',
-        'price_max',
-        'image',
-        'images',
-        'meta',
-        'named_tags',
-        'variants_count',
-        'inventory_quantity',
-        'compare_at_price_min',
-        'compare_at_price_max',
+        'categories',
+        'isUk',
+        'isUsa',
+        'isUsed',
+        'isNew',
+        'availableConditions',
+        'bestConditionPrice',
       ],
+      facets: ['hierarchicalCategories.lvl0', 'hierarchicalCategories.lvl1', 'productType', 'author'],
       analytics: false,
     };
 
@@ -157,104 +157,85 @@ export class AlgoliaService {
   }
 
   /**
-   * Get products by category/product_type
+   * Get products by category using hierarchicalCategories
    */
   async getProductsByCategory(
     category: string,
     page: number = 0,
     hitsPerPage: number = 20,
   ): Promise<AlgoliaSearchResponse> {
-    // Use facetFilters to filter by product_type
-    const facetFilters = [[`product_type:${category}`]];
+    // Use hierarchicalCategories filter
+    const facetFilters = [[`hierarchicalCategories.lvl0:${category}`]];
     return this.searchProducts('', page, hitsPerPage, undefined, facetFilters);
   }
 
   /**
-   * Get all product categories (facet values)
+   * Get all product categories from hierarchicalCategories
    */
   async getCategories(): Promise<string[]> {
     await this.delay();
 
-    const url = `${this.baseUrl}/${this.indexName}/facets/product_type/query`;
-    
     try {
-      this.logger.log('Fetching product categories from Algolia facets');
+      this.logger.log('Fetching product categories from Algolia');
       
-      const response = await axios.post<AlgoliaFacetResponse>(
-        url,
-        {
-          query: '',
-          maxFacetHits: 100,
-        },
-        {
-          headers: this.getHeaders(),
-          timeout: 30000,
-        },
-      );
-
-      const categories = response.data.facetHits.map((hit) => hit.value).filter(Boolean);
-      this.logger.log(`Found ${categories.length} categories from Algolia facets`);
-      return categories;
+      // Use regular search with facets enabled
+      const response = await this.searchProducts('', 0, 1);
+      
+      if (response.facets && response.facets['hierarchicalCategories.lvl0']) {
+        const categories = Object.keys(response.facets['hierarchicalCategories.lvl0']).filter(Boolean);
+        this.logger.log(`Found ${categories.length} categories from Algolia`);
+        return categories;
+      }
+      
+      this.logger.warn('No hierarchicalCategories facets found, using fallback');
+      return this.getFallbackCategories();
     } catch (error) {
-      this.logger.error(`Failed to get categories from Algolia: ${error.message}`, error.stack);
-      // Return fallback categories
-      return [
-        'Fiction',
-        'Non-Fiction',
-        "Children's Books",
-        'Academic & Educational',
-        'Biography',
-        'Science Fiction',
-        'Mystery & Crime',
-        'History',
-        'Self-Help',
-        'Business & Economics',
-      ];
+      this.logger.error(`Failed to get categories: ${error.message}`, error.stack);
+      return this.getFallbackCategories();
     }
   }
 
   /**
-   * Get a single product by handle or objectID
+   * Fallback categories
    */
-  async getProductByHandle(handle: string): Promise<AlgoliaProduct | null> {
-    await this.delay();
-
-    try {
-      // First try to get by objectID
-      const url = `${this.baseUrl}/${this.indexName}/${encodeURIComponent(handle)}`;
-      
-      try {
-        const response = await axios.get<AlgoliaProduct>(url, {
-          headers: this.getHeaders(),
-          timeout: 15000,
-        });
-        return response.data;
-      } catch {
-        // If not found by objectID, search by handle
-        const searchResponse = await this.searchProducts('', 0, 1, `handle:${handle}`);
-        return searchResponse.hits[0] || null;
-      }
-    } catch (error) {
-      this.logger.error(`Failed to get product ${handle}: ${error.message}`);
-      return null;
-    }
+  private getFallbackCategories(): string[] {
+    return [
+      'Children\'s Books',
+      'Fiction',
+      'Non-Fiction',
+      'Biography & Autobiography',
+      'History',
+      'Science & Nature',
+      'Religion & Spirituality',
+      'Art & Photography',
+      'Business & Economics',
+      'Self-Help',
+    ];
   }
+
+  /**
+   * Get a single product by handle
+   */
+ async getProductByHandle(handle: string): Promise<AlgoliaProduct | null> {
+  await this.delay();
+
+  try {
+    // Use query instead of filters for handle matching
+    const searchResponse = await this.searchProducts(handle, 0, 1);
+    return searchResponse.hits[0] || null;
+  } catch (error) {
+    this.logger.error(`Failed to get product ${handle}: ${error.message}`);
+    return null;
+  }
+}
 
   /**
    * Get related/similar products
    */
-  async getRelatedProducts(productType: string, excludeHandle: string, limit: number = 6): Promise<AlgoliaProduct[]> {
+  async getRelatedProducts(category: string, excludeHandle: string, limit: number = 6): Promise<AlgoliaProduct[]> {
     try {
-      const response = await this.searchProducts(
-        '',
-        0,
-        limit + 1,
-        undefined,
-        [[`product_type:${productType}`]],
-      );
-      
-      // Filter out the current product and limit results
-      return response.hits.filter((p) => p.handle !== excludeHandle).slice(0, limit);
+      const response = await this.getProductsByCategory(category, 0, limit + 1);
+      return response.hits.filter((p) => p.productHandle !== excludeHandle).slice(0, limit);
     } catch (error) {
       this.logger.error(`Failed to get related products: ${error.message}`);
       return [];
@@ -262,37 +243,41 @@ export class AlgoliaService {
   }
 
   /**
-   * Browse all products with pagination (for scraping all products)
-   */
-  async browseAllProducts(
-    page: number = 0,
-    hitsPerPage: number = 100,
-  ): Promise<AlgoliaSearchResponse> {
-    return this.searchProducts('', page, hitsPerPage);
-  }
-
-  /**
    * Extract author from Algolia product
    */
   extractAuthor(product: AlgoliaProduct): string | null {
-    // Check named_tags first
-    if (product.named_tags?.author && product.named_tags.author.length > 0) {
-      return product.named_tags.author[0];
-    }
-    // Check meta
-    if (product.meta?.author) {
-      return product.meta.author;
-    }
-    // Check vendor (sometimes used for author)
-    if (product.vendor && product.vendor !== 'World of Books') {
-      return product.vendor;
-    }
-    // Extract from tags
-    const authorTag = product.tags?.find((tag) => tag.toLowerCase().startsWith('author:'));
-    if (authorTag) {
-      return authorTag.replace(/^author:/i, '').trim();
-    }
-    return null;
+    return product.author || null;
+  }
+
+  /**
+   * Extract title from Algolia product
+   */
+  extractTitle(product: AlgoliaProduct): string {
+    return product.longTitle || product.shortTitle || 'Unknown Title';
+  }
+
+  /**
+   * Extract price from Algolia product
+   */
+  extractPrice(product: AlgoliaProduct): number | null {
+    return product.fromPrice || product.bestConditionPrice || null;
+  }
+
+  /**
+   * Extract image URL from Algolia product
+   */
+  extractImageUrl(product: AlgoliaProduct): string {
+    return product.imageURL || 'https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=400';
+  }
+
+  /**
+   * Extract category from Algolia product
+   */
+  extractCategory(product: AlgoliaProduct): string {
+    return product.hierarchicalCategories?.lvl0 || 
+           product.hierarchicalCategories?.lvl1 || 
+           product.categories?.[0] || 
+           'General';
   }
 
   /**
@@ -303,10 +288,10 @@ export class AlgoliaService {
   }
 
   /**
-   * Build category URL from product_type
+   * Build category URL from category name
    */
-  buildCategoryUrl(productType: string): string {
-    const slug = productType.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  buildCategoryUrl(categoryName: string): string {
+    const slug = categoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     return `https://www.worldofbooks.com/en-gb/collections/${slug}`;
   }
 }

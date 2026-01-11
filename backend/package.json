@@ -23,7 +23,9 @@
     "migration:run": "npm run typeorm -- migration:run -d src/config/typeorm.config.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/config/typeorm.config.ts",
     "seed": "ts-node src/seed.ts",
-    "test:scraper": "ts-node src/test-scraper.ts"
+    "test:scraper": "ts-node src/test-scraper.ts",
+    "test:algolia": "ts-node src/test-algolia.ts",
+    "test:algolia-raw": "ts-node src/test-algolia-raw.ts"
   },
   "dependencies": {
     "@nestjs/bull": "^10.0.1",
