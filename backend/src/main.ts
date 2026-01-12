@@ -7,13 +7,21 @@ import { AllExceptionsFilter } from './filters/http-exception.filter';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Global prefix
-  app.setGlobalPrefix('api');
+  // Global prefix with exclusion for root route (Fixes Health Check 404)
+  app.setGlobalPrefix('api', {
+    exclude: ['/'],
+  });
 
-  // CORS
+  // CORS Configuration
+  // FIX: Parse the comma-separated CORS_ORIGIN string into an array
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
+    : 'http://localhost:3000';
+
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: allowedOrigins,
     credentials: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   });
 
   // Global validation pipe
