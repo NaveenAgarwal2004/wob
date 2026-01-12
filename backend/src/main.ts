@@ -12,12 +12,22 @@ async function bootstrap() {
     exclude: ['/'],
   });
 
-  // CORS Configuration
-  // FIX: Parse the comma-separated CORS_ORIGIN string into an array
-  const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
-    : 'http://localhost:3000';
+  // ROBUST CORS CONFIGURATION
+  // 1. Define default allowed origins (Localhost + All Vercel Deployments)
+  const allowedOrigins: (string | RegExp)[] = [
+    'http://localhost:3000',
+    /^https:\/\/.*\.vercel\.app$/, // Regex to allow any Vercel deployment
+  ];
 
+  // 2. Add any specific origins from Environment Variables
+  if (process.env.CORS_ORIGIN) {
+    const envOrigins = process.env.CORS_ORIGIN.split(',').map((origin) =>
+      origin.trim(),
+    );
+    allowedOrigins.push(...envOrigins);
+  }
+
+  // 3. Enable CORS with the combined list
   app.enableCors({
     origin: allowedOrigins,
     credentials: true,
@@ -53,6 +63,8 @@ async function bootstrap() {
   const port = process.env.PORT || 3001;
   await app.listen(port, '0.0.0.0');
   console.log(`🚀 Application is running on: http://localhost:${port}`);
-  console.log(`📚 Swagger docs available at: http://localhost:${port}/api/docs`);
+  console.log(
+    `📚 Swagger docs available at: http://localhost:${port}/api/docs`,
+  );
 }
 bootstrap();
