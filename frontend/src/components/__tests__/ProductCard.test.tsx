@@ -1,3 +1,4 @@
+// frontend/src/components/__tests__/ProductCard.test.tsx
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ProductCard from '../ProductCard';
@@ -7,8 +8,9 @@ import { Product } from '@/lib/types';
 jest.mock('next/image', () => ({
   __esModule: true,
   default: (props: any) => {
+    const { fill, ...rest } = props;
     // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
-    return <img {...props} />;
+    return <img {...rest} />;
   },
 }));
 
@@ -64,12 +66,27 @@ describe('ProductCard', () => {
     expect(screen.getByText('No Image')).toBeInTheDocument();
   });
 
-  it('has correct test IDs', () => {
+  it('has correct link structure', () => {
     render(<ProductCard product={mockProduct} />);
     
-    expect(screen.getByTestId('product-card-test-id-1')).toBeInTheDocument();
+    // Check that the card is a link
+    const link = screen.getByRole('link');
+    expect(link).toHaveAttribute('href', '/product/test-id-1');
+  });
+
+  it('displays all product elements', () => {
+    render(<ProductCard product={mockProduct} />);
+    
+    // Title should be present
     expect(screen.getByTestId('product-title-test-id-1')).toBeInTheDocument();
+    
+    // Author should be present
     expect(screen.getByTestId('product-author-test-id-1')).toBeInTheDocument();
+    
+    // Price should be present
     expect(screen.getByTestId('product-price-test-id-1')).toBeInTheDocument();
+    
+    // Image should be present
+    expect(screen.getByTestId('product-image-test-id-1')).toBeInTheDocument();
   });
 });

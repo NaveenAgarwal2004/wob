@@ -113,11 +113,13 @@ describe('NavigationList', () => {
       expect(screen.getByTestId('navigation-list')).toBeInTheDocument();
     });
 
-    expect(screen.getByTestId('navigation-card-1')).toBeInTheDocument();
-    expect(screen.getByTestId('navigation-card-2')).toBeInTheDocument();
-    
+    // Check for navigation titles instead of card IDs
     expect(screen.getByText('Books')).toBeInTheDocument();
     expect(screen.getByText("Children's Books")).toBeInTheDocument();
+    
+    // Check that the titles have correct test IDs
+    expect(screen.getByTestId('navigation-title-1')).toBeInTheDocument();
+    expect(screen.getByTestId('navigation-title-2')).toBeInTheDocument();
   });
 
   it('displays last scraped date', async () => {
@@ -140,7 +142,7 @@ describe('NavigationList', () => {
     expect(dateElements.length).toBeGreaterThan(0);
   });
 
-  it('renders correct number of cards', async () => {
+  it('renders correct number of navigation items', async () => {
     mockUseSWR.mockReturnValue({
       data: mockNavigations,
       error: undefined,
@@ -152,8 +154,9 @@ describe('NavigationList', () => {
     render(<NavigationList />);
     
     await waitFor(() => {
-      const cards = screen.getAllByTestId(/navigation-card-/);
-      expect(cards).toHaveLength(2);
+      // Count by title test IDs instead of card IDs
+      const titles = screen.getAllByTestId(/navigation-title-/);
+      expect(titles).toHaveLength(2);
     });
   });
 });
